@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1776094360753,
+      "tag": "0000_fair_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1776094568593,
+      "tag": "0001_overconfident_marauders",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776344210948,
+      "tag": "0002_auth_and_settings_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1776421414202,
+      "tag": "0003_vscode_api_and_passwords",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1776664800000,
+      "tag": "0004_prompt_injection_and_webhooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1778261400000,
+      "tag": "0005_webhook_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778265800000,
+      "tag": "0006_cascade_deletes",
+      "breakpoints": true
+    }
+  ]
+}
