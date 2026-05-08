@@ -1,18 +1,20 @@
 import { eq } from "drizzle-orm";
 import { users, type InsertUser } from "../../../drizzle/schema";
 import { getDb } from "..";
+import { assertDb, ValidationError } from "../../_core/errors";
+import { logger } from "../../_core/logger";
 import { sendWelcomeEmail } from "../../email";
 
 export async function upsertUser(
   user: InsertUser
 ): Promise<{ isNew: boolean }> {
   if (!user.openId) {
-    throw new Error("User openId is required for upsert");
+    throw new ValidationError("User openId is required for upsert");
   }
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    logger.warn("[Database] Cannot upsert user: database not available");
     return { isNew: false };
   }
 
@@ -40,7 +42,9 @@ export async function upsertUser(
     sendWelcomeEmail({
       toEmail: user.email,
       userName: user.name || "there",
-    }).catch(err => console.warn("[Email] Failed to send welcome email:", err));
+    }).catch(err =>
+      logger.warn({ err }, "[Email] Failed to send welcome email")
+    );
   }
 
   return { isNew: true };
@@ -49,7 +53,7 @@ export async function upsertUser(
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+    logger.warn("[Database] Cannot get user: database not available");
     return undefined;
   }
 
@@ -87,7 +91,7 @@ export async function updateUserPassword(
   hashedPassword: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db, "updateUserPassword");
 
   await db
     .update(users)
@@ -100,7 +104,7 @@ export async function updateUserPlan(
   plan: "free" | "pro" | "enterprise"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db, "updateUserPlan");
 
   await db
     .update(users)
@@ -136,7 +140,7 @@ export async function getUserByApiKey(apiKey: string) {
  */
 export async function updateUserApiKey(userId: number, apiKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db, "updateUserApiKey");
 
   await db
     .update(users)
@@ -155,7 +159,7 @@ export async function recordVSCodeActivity(
   timestamp: Date
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db, "recordVSCodeActivity");
 
   // `vscodeActivities` is re-exported from server/db/index.ts
   const { vscodeActivities } = await import("../../../drizzle/schema");

@@ -4,6 +4,8 @@
  */
 
 import * as db from "../db";
+import { NotFoundError } from "../_core/errors";
+import { logger } from "../_core/logger";
 import {
   generateRealFindings,
   calculateRiskScore,
@@ -59,7 +61,9 @@ export async function runCollectionScan(
 ): Promise<ScanResult> {
   const collection = await db.getCollectionById(collectionId);
   if (!collection) {
-    throw new Error("Collection not found");
+    throw new NotFoundError("Collection not found", {
+      context: { collectionId, userId },
+    });
   }
 
   // Fire scan.started webhook for any user-registered endpoints. Slack
@@ -73,7 +77,7 @@ export async function runCollectionScan(
       triggeredBy: options.triggeredBy || "user",
     });
   } catch (err) {
-    console.warn("[ScanService] scan.started webhook failed:", err);
+    logger.warn({ err }, "[ScanService] scan.started webhook failed");
   }
 
   // Generate findings. Prompt-injection scans use a dedicated payload-aware
@@ -157,9 +161,9 @@ export async function runCollectionScan(
         dashboardUrl: `${process.env.APP_URL || "http://localhost:3000"}/collections/${collectionId}`,
       });
     } catch (error) {
-      console.warn(
-        "[ScanService] Failed to send scan completion email:",
-        error
+      logger.warn(
+        { err: error },
+        "[ScanService] Failed to send scan completion email"
       );
     }
   }
@@ -179,7 +183,7 @@ export async function runCollectionScan(
       branch: options.branch,
     });
   } catch (error) {
-    console.warn("[ScanService] Failed to send Slack notification:", error);
+    logger.warn({ err: error }, "[ScanService] Failed to send Slack notification");
   }
 
   // Fire lifecycle webhooks (Phase 25). These run *in addition to* the
@@ -202,7 +206,7 @@ export async function runCollectionScan(
       budget,
     });
   } catch (error) {
-    console.warn("[ScanService] scan.complete webhook failed:", error);
+    logger.warn({ err: error }, "[ScanService] scan.complete webhook failed");
   }
 
   // Per-finding webhooks for Critical & High only — we don't want to

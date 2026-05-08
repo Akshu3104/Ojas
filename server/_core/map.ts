@@ -8,6 +8,7 @@
  */
 
 import { ENV } from "./env";
+import { ExternalServiceError, InternalError } from "./errors";
 import { fetchWithTimeout } from "../utils/fetchWithTimeout";
 
 const MAPS_TIMEOUT_MS = 10_000;
@@ -26,8 +27,11 @@ function getMapsConfig(): MapsConfig {
   const apiKey = ENV.forgeApiKey;
 
   if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+    throw new InternalError(
+      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
+      {
+        safeMessage: "Maps service is temporarily unavailable.",
+      }
     );
   }
 
@@ -85,8 +89,17 @@ export async function makeRequest<T = unknown>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `Google Maps API request failed (${response.status} ${response.statusText}): ${errorText}`
+    throw new ExternalServiceError(
+      `Google Maps API request failed (${response.status} ${response.statusText})`,
+      {
+        safeMessage: "Maps request failed. Please try again.",
+        context: {
+          provider: "google-maps",
+          endpoint,
+          status: response.status,
+          body: errorText,
+        },
+      }
     );
   }
 

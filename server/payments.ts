@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import { ENV } from "./_core/env";
+import { BillingProviderError, InternalError } from "./_core/errors";
+import { logger } from "./_core/logger";
 import { fetchWithTimeout } from "./utils/fetchWithTimeout";
 
 // Razorpay's API responds in <500ms under normal conditions, but plan-list
@@ -181,8 +183,12 @@ interface RazorpayWebhookPayload {
 
 const authHeader = () => {
   if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-    throw new Error(
-      "Razorpay credentials not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+    throw new InternalError(
+      "Razorpay credentials not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+      {
+        safeMessage:
+          "Billing is temporarily unavailable. Please try again shortly.",
+      }
     );
   }
   return `Basic ${Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64")}`;
@@ -204,7 +210,17 @@ async function getOrCreatePlan(plan: PlanType): Promise<string> {
   );
 
   if (!listResponse.ok) {
-    throw new Error(`Failed to list plans: ${await listResponse.text()}`);
+    throw new BillingProviderError(
+      `Razorpay list-plans failed (${listResponse.status})`,
+      {
+        safeMessage: "Could not load billing plans. Please try again.",
+        context: {
+          provider: "razorpay",
+          status: listResponse.status,
+          body: await listResponse.text(),
+        },
+      }
+    );
   }
 
   const { items: plans } = await listResponse.json();
@@ -234,7 +250,17 @@ async function getOrCreatePlan(plan: PlanType): Promise<string> {
   });
 
   if (!createResponse.ok) {
-    throw new Error(`Failed to create plan: ${await createResponse.text()}`);
+    throw new BillingProviderError(
+      `Razorpay create-plan failed (${createResponse.status})`,
+      {
+        safeMessage: "Could not create the billing plan. Please try again.",
+        context: {
+          provider: "razorpay",
+          status: createResponse.status,
+          body: await createResponse.text(),
+        },
+      }
+    );
   }
 
   const newPlan: RazorpayPlanResponse = await createResponse.json();
@@ -258,7 +284,17 @@ async function getOrCreateCustomer(
   );
 
   if (!listResponse.ok) {
-    throw new Error(`Failed to list customers: ${await listResponse.text()}`);
+    throw new BillingProviderError(
+      `Razorpay list-customers failed (${listResponse.status})`,
+      {
+        safeMessage: "Could not look up your billing profile. Please try again.",
+        context: {
+          provider: "razorpay",
+          status: listResponse.status,
+          body: await listResponse.text(),
+        },
+      }
+    );
   }
 
   const { items: customers } = await listResponse.json();
@@ -285,8 +321,16 @@ async function getOrCreateCustomer(
   });
 
   if (!createResponse.ok) {
-    throw new Error(
-      `Failed to create customer: ${await createResponse.text()}`
+    throw new BillingProviderError(
+      `Razorpay create-customer failed (${createResponse.status})`,
+      {
+        safeMessage: "Could not create your billing profile. Please try again.",
+        context: {
+          provider: "razorpay",
+          status: createResponse.status,
+          body: await createResponse.text(),
+        },
+      }
     );
   }
 
@@ -339,8 +383,18 @@ export async function createSubscription(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Razorpay subscription creation failed: ${error}`);
+    throw new BillingProviderError(
+      `Razorpay subscription-create failed (${response.status})`,
+      {
+        safeMessage:
+          "Could not start your subscription. Please try again or contact support.",
+        context: {
+          provider: "razorpay",
+          status: response.status,
+          body: await response.text(),
+        },
+      }
+    );
   }
 
   const subscription: RazorpaySubscriptionResponse = await response.json();
@@ -367,7 +421,7 @@ export function verifyPaymentSignature(params: {
   signature: string;
 }): boolean {
   if (!RAZORPAY_KEY_SECRET) {
-    console.error(
+    logger.error(
       "[Razorpay] Key secret not configured — cannot verify signature"
     );
     return false;
@@ -389,7 +443,9 @@ export function verifyPaymentSignature(params: {
  */
 export async function getPaymentDetails(paymentId: string): Promise<any> {
   if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-    throw new Error("Razorpay credentials not configured");
+    throw new InternalError("Razorpay credentials not configured", {
+      safeMessage: "Billing is temporarily unavailable. Please try again shortly.",
+    });
   }
 
   const response = await fetchWithTimeout(
@@ -402,7 +458,13 @@ export async function getPaymentDetails(paymentId: string): Promise<any> {
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch payment details: ${response.statusText}`);
+    throw new BillingProviderError(
+      `Razorpay get-payment failed (${response.status})`,
+      {
+        safeMessage: "Could not load payment details. Please try again.",
+        context: { provider: "razorpay", paymentId, status: response.status },
+      }
+    );
   }
 
   return response.json();
@@ -417,7 +479,10 @@ export async function processRefund(
   reason: string = "User requested refund"
 ): Promise<any> {
   if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-    throw new Error("Razorpay credentials not configured");
+    throw new InternalError("Razorpay credentials not configured", {
+      safeMessage:
+        "Refunds are temporarily unavailable. Please try again shortly.",
+    });
   }
 
   const response = await fetchWithTimeout(
@@ -436,7 +501,13 @@ export async function processRefund(
   );
 
   if (!response.ok) {
-    throw new Error(`Refund failed: ${response.statusText}`);
+    throw new BillingProviderError(
+      `Razorpay refund failed (${response.status})`,
+      {
+        safeMessage: "Refund could not be processed. Please contact support.",
+        context: { provider: "razorpay", paymentId, amount, status: response.status },
+      }
+    );
   }
 
   return response.json();
@@ -462,7 +533,18 @@ export async function cancelSubscription(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to cancel subscription: ${await response.text()}`);
+    throw new BillingProviderError(
+      `Razorpay cancel-subscription failed (${response.status})`,
+      {
+        safeMessage: "Could not cancel your subscription. Please try again.",
+        context: {
+          provider: "razorpay",
+          subscriptionId,
+          status: response.status,
+          body: await response.text(),
+        },
+      }
+    );
   }
 
   return response.json();
@@ -482,7 +564,13 @@ export async function getSubscriptionDetails(
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch subscription: ${response.statusText}`);
+    throw new BillingProviderError(
+      `Razorpay get-subscription failed (${response.status})`,
+      {
+        safeMessage: "Could not load subscription details. Please try again.",
+        context: { provider: "razorpay", subscriptionId, status: response.status },
+      }
+    );
   }
 
   return response.json();
@@ -500,7 +588,13 @@ export async function getSubscriptionInvoices(
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch invoices: ${response.statusText}`);
+    throw new BillingProviderError(
+      `Razorpay get-invoices failed (${response.status})`,
+      {
+        safeMessage: "Could not load invoices. Please try again.",
+        context: { provider: "razorpay", subscriptionId, status: response.status },
+      }
+    );
   }
 
   const data = await response.json();
@@ -516,7 +610,7 @@ export function verifyWebhookSignature(
   secret: string = RAZORPAY_KEY_SECRET || ""
 ): boolean {
   if (!secret) {
-    console.error("[Razorpay] Webhook secret not configured");
+    logger.error("[Razorpay] Webhook secret not configured");
     return false;
   }
 

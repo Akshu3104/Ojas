@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { logger } from "./logger";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -11,11 +12,11 @@ export const redis = new Redis(REDIS_URL, {
 });
 
 redis.on("error", err => {
-  console.error("Redis error:", err);
+  logger.error({ err: err }, "Redis error");
 });
 
 redis.on("connect", () => {
-  console.log("Redis connected");
+  logger.info("Redis connected");
 });
 
 // Cache TTL constants (in seconds)
@@ -56,7 +57,7 @@ export async function getOrSetCache<T>(
     return data;
   } catch (error) {
     // Fallback to direct fetch if Redis fails
-    console.warn("Cache fetch failed, returning fresh data:", error);
+    logger.warn({ err: error }, "Cache fetch failed, returning fresh data");
     return fetchFn();
   }
 }
@@ -69,7 +70,7 @@ export async function invalidateCache(pattern: string): Promise<void> {
       await redis.del(...keys);
     }
   } catch (error) {
-    console.warn("Cache invalidation failed:", error);
+    logger.warn({ err: error }, "Cache invalidation failed");
   }
 }
 
@@ -137,7 +138,7 @@ export async function rateLimitSlidingWindow(
       resetAt: now + windowMs,
     };
   } catch (err) {
-    console.warn(
+    logger.warn(
       `[RateLimit] Redis check failed for ${key}, failing open:`,
       err instanceof Error ? err.message : err
     );

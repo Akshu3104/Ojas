@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { sendTeamInviteEmail } from "../email";
+import { logger } from "../_core/logger";
 
 export const teamRouter = router({
   invite: protectedProcedure
@@ -33,7 +34,7 @@ export const teamRouter = router({
         inviterName: ctx.user.name ?? "A DevPulse user",
         role: input.role,
         token: member.id,
-      }).catch(err => console.warn("[Team] Email send failed:", err));
+      }).catch(err => logger.warn({ err: err }, "[Team] Email send failed"));
 
       return { success: true, memberId: member.id };
     }),
@@ -116,7 +117,7 @@ export const teamRouter = router({
         toEmail: member.memberEmail,
         inviterName: ctx.user.name ?? "A DevPulse user",
         role: member.role,
-      }).catch(err => console.warn("[Team] Email send failed:", err));
+      }).catch(err => logger.warn({ err: err }, "[Team] Email send failed"));
       return { success: true };
     }),
 

@@ -23,6 +23,7 @@ import http from "http";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import type { WebhookEndpoint } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 
 /**
  * Module-scoped HTTP(S) agents with keep-alive enabled. Reusing TCP + TLS
@@ -122,7 +123,7 @@ export async function deliver(
   try {
     endpoints = await db.getActiveWebhookEndpoints(userId, event);
   } catch (err) {
-    console.warn("[webhookDelivery] failed to list endpoints:", err);
+    logger.warn({ err: err }, "[webhookDelivery] failed to list endpoints");
     return [];
   }
 
@@ -209,7 +210,7 @@ async function deliverToEndpoint(
       );
     }
   } catch (err) {
-    console.warn("[webhookDelivery] failed to persist audit row:", err);
+    logger.warn({ err: err }, "[webhookDelivery] failed to persist audit row");
   }
 
   return {

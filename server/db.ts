@@ -29,7 +29,24 @@ import {
   type InsertWebhookDelivery,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import {
+  assertDb,
+  ConflictError,
+  InternalError,
+  NotFoundError,
+  ValidationError,
+} from "./_core/errors";
+import { logger } from "./_core/logger";
+import { toNumber } from "./utils/decimal";
 import { sendWelcomeEmail } from "./email";
+
+// Re-derive the mysqlEnum literal unions from the Drizzle schema so
+// callers don't have to pass `string` and trigger an `as any` cast.
+type Subscription = typeof subscriptions.$inferSelect;
+type Payment = typeof payments.$inferSelect;
+export type SubscriptionStatus = Subscription["status"];
+export type PaymentStatus = Payment["status"];
+export type RefundStatus = NonNullable<Payment["refundStatus"]>;
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -39,7 +56,7 @@ export async function getDb() {
     try {
       _db = drizzle(process.env.DATABASE_URL);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      logger.warn({ err: error }, "[Database] Failed to connect");
       _db = null;
     }
   }
@@ -50,12 +67,12 @@ export async function upsertUser(
   user: InsertUser
 ): Promise<{ isNew: boolean }> {
   if (!user.openId) {
-    throw new Error("User openId is required for upsert");
+    throw new ValidationError("User openId is required for upsert");
   }
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    logger.warn("[Database] Cannot upsert user: database not available");
     return { isNew: false };
   }
 
@@ -113,16 +130,16 @@ export async function upsertUser(
           toEmail: user.email,
           userName: user.name || "",
         });
-        console.log(`[User] Welcome email sent to ${user.email}`);
+        logger.info(`[User] Welcome email sent to ${user.email}`);
       } catch (emailError) {
-        console.warn("[User] Failed to send welcome email:", emailError);
+        logger.warn({ err: emailError }, "[User] Failed to send welcome email");
         // Don't fail user creation if email fails
       }
     }
 
     return { isNew: isNewUser };
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
+    logger.error({ err: error }, "[Database] Failed to upsert user");
     throw error;
   }
 }
@@ -130,7 +147,7 @@ export async function upsertUser(
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+    logger.warn("[Database] Cannot get user: database not available");
     return undefined;
   }
 
@@ -224,7 +241,7 @@ export async function createCollection(
   description?: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `col_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const totalRequests =
@@ -250,7 +267,7 @@ export async function updateCollection(
   updates: { name?: string; description?: string }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const set: Record<string, unknown> = {};
   if (updates.name !== undefined) set.name = updates.name;
@@ -429,7 +446,7 @@ export async function hasCollectionAccess(
 
 export async function deleteCollection(id: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   // Cascade delete all orphaned analytical data
   await db.delete(findings).where(eq(findings.collectionId, id));
@@ -458,7 +475,7 @@ export async function createScan(
   findingsData?: any
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `scan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -513,7 +530,7 @@ export async function createFinding(
   cweId?: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `finding_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -561,7 +578,7 @@ export async function updateFindingStatus(
   status: "open" | "in-progress" | "resolved"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db.update(findings).set({ status }).where(eq(findings.id, id));
 }
@@ -583,7 +600,7 @@ export async function createShadowAPI(
   recommendation?: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -640,7 +657,7 @@ export async function getShadowAPIById(id: string) {
 
 export async function markShadowAPIDocumented(id: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(shadowAPIs)
@@ -661,7 +678,7 @@ export async function recordTokenUsage(
   costUSD: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const totalTokens = promptTokens + completionTokens + thinkingTokens;
@@ -733,7 +750,7 @@ export async function recordTokenUsage(
               percentUsed,
             });
           } catch (err) {
-            console.warn("[BudgetWarning] webhook dispatch failed:", err);
+            logger.warn({ err: err }, "[BudgetWarning] webhook dispatch failed");
           }
 
           // Update last warning timestamp
@@ -759,7 +776,7 @@ export async function recordTokenUsage(
             reason: "budget_exceeded",
           });
         } catch (err) {
-          console.warn("[KillSwitch] webhook dispatch failed:", err);
+          logger.warn({ err: err }, "[KillSwitch] webhook dispatch failed");
         }
       }
     }
@@ -804,7 +821,7 @@ export async function createKillSwitchEvent(
   details?: any
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `ks_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -839,7 +856,7 @@ export async function updateKillSwitchSettings(
   currentSpendUSD?: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const existing = await getKillSwitchSettings(userId);
 
@@ -904,7 +921,7 @@ export async function createComplianceReport(
   requirementsData?: any
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `comp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -956,7 +973,7 @@ export async function inviteTeamMember(
   role: "admin" | "editor" | "viewer"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `team_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -1018,14 +1035,14 @@ export async function updateTeamMemberRole(
   role: "admin" | "editor" | "viewer"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db.update(teamMembers).set({ role }).where(eq(teamMembers.id, id));
 }
 
 export async function removeTeamMember(id: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db.delete(teamMembers).where(eq(teamMembers.id, id));
 }
@@ -1036,7 +1053,7 @@ export async function removeTeamMember(id: string) {
 
 export async function getOrCreateOnboardingProgress(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const existing = await db
     .select()
@@ -1072,7 +1089,7 @@ export async function updateOnboardingStep(
     | "setupCompliance"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const updates: any = {};
 
@@ -1117,7 +1134,7 @@ export async function updateOnboardingStep(
 
 export async function completeOnboarding(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(users)
@@ -1197,7 +1214,7 @@ export async function getRecentScans(userId: number, limit: number = 5) {
     id: s.id,
     collectionName: s.collectionName ?? "Unknown",
     scanType: s.scanType,
-    riskScore: parseFloat(s.riskScore as any),
+    riskScore: toNumber(s.riskScore),
     riskLevel: s.riskLevel,
     totalFindings: s.totalFindings,
     createdAt: s.createdAt,
@@ -1231,7 +1248,7 @@ export async function updateUserPlan(
   plan: "free" | "pro" | "enterprise"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db.update(users).set({ plan }).where(eq(users.id, userId));
   invalidateUserRowCache(userId);
@@ -1258,12 +1275,12 @@ export async function acceptTeamInvitation(
   memberUserId: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const member = await getTeamMemberById(memberId);
-  if (!member) throw new Error("Invitation not found");
+  if (!member) throw new NotFoundError("Invitation not found");
   if (member.status !== "pending")
-    throw new Error("Invitation is no longer pending");
+    throw new ConflictError("Invitation is no longer pending");
 
   await db
     .update(teamMembers)
@@ -1273,12 +1290,12 @@ export async function acceptTeamInvitation(
 
 export async function rejectTeamInvitation(memberId: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const member = await getTeamMemberById(memberId);
-  if (!member) throw new Error("Invitation not found");
+  if (!member) throw new NotFoundError("Invitation not found");
   if (member.status !== "pending")
-    throw new Error("Invitation is no longer pending");
+    throw new ConflictError("Invitation is no longer pending");
 
   await db
     .update(teamMembers)
@@ -1323,7 +1340,7 @@ export async function detectCostAnomaly(
     };
   }
 
-  const costs = usage.map(u => parseFloat(u.costUSD as any));
+  const costs = usage.map(u => toNumber(u.costUSD));
   const currentCost = costs[0] ?? 0;
   const averageCost = costs.reduce((a, b) => a + b, 0) / costs.length;
   const variance =
@@ -1348,7 +1365,7 @@ export async function createPasswordResetToken(
   expiresAt: Date
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `prt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   await db.insert(passwordResetTokens).values({
@@ -1375,7 +1392,7 @@ export async function getPasswordResetToken(token: string) {
 
 export async function markPasswordResetTokenUsed(tokenId: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(passwordResetTokens)
@@ -1404,7 +1421,7 @@ export async function createUserSession(
   expiresAt: Date
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const id = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   await db.insert(userSessions).values({
@@ -1456,7 +1473,7 @@ export async function getUserSessionByToken(sessionToken: string) {
 
 export async function revokeUserSession(sessionId: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(userSessions)
@@ -1469,7 +1486,7 @@ export async function revokeAllUserSessions(
   exceptSessionId?: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const conditions = [
     eq(userSessions.userId, userId),
@@ -1559,7 +1576,7 @@ export async function updateEmailPreferences(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const existing = await getOrCreateEmailPreferences(userId);
 
@@ -1623,7 +1640,7 @@ export async function updateUserProfile(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(users)
@@ -1640,7 +1657,7 @@ export async function updateUserPassword(
   hashedPassword: string
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(users)
@@ -1666,7 +1683,7 @@ export async function createLocalUser(data: {
   passwordHash: string;
 }): Promise<{ id: number; openId: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const openId = `local:${crypto.randomBytes(24).toString("hex")}`;
 
@@ -1686,7 +1703,9 @@ export async function createLocalUser(data: {
     .limit(1);
 
   if (created.length === 0) {
-    throw new Error("Failed to create user");
+    throw new InternalError("Failed to create user", {
+      safeMessage: "Could not create your account. Please try again.",
+    });
   }
 
   return created[0];
@@ -1698,7 +1717,7 @@ export async function incrementFailedLoginAttempts(
   lockDurationMs = 15 * 60 * 1000
 ): Promise<{ attempts: number; lockedUntil: Date | null }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const existing = await db
     .select({ attempts: users.failedLoginAttempts })
@@ -1725,7 +1744,7 @@ export async function incrementFailedLoginAttempts(
 
 export async function resetFailedLoginAttempts(userId: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(users)
@@ -1747,7 +1766,7 @@ export async function deleteUserAccount(
   userId: number
 ): Promise<{ deleted: boolean; message: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   try {
     // Delete in order respecting foreign key relationships
@@ -1830,7 +1849,7 @@ export async function deleteUserAccount(
       message: "Account and all associated data deleted successfully",
     };
   } catch (error) {
-    console.error("[Database] Account deletion failed:", error);
+    logger.error({ err: error }, "[Database] Account deletion failed");
     throw error;
   }
 }
@@ -1865,7 +1884,7 @@ export async function createSubscription(data: {
   status: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db.insert(subscriptions).values({
     id: data.id,
@@ -1912,16 +1931,16 @@ export async function getSubscriptionByRazorpayId(razorpayId: string) {
 
 export async function updateSubscriptionStatus(
   id: string,
-  status: string,
+  status: SubscriptionStatus,
   cancelAtPeriodEnd: boolean = false
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(subscriptions)
     .set({
-      status: status as any,
+      status,
       cancelAtPeriodEnd,
       ...(status === "cancelled" ? { cancelledAt: new Date() } : {}),
     })
@@ -1960,13 +1979,13 @@ export async function createOrUpdatePayment(data: {
   razorpayOrderId?: string;
   amount: number;
   currency: string;
-  status: string;
+  status: PaymentStatus;
   receipt?: string;
   description?: string;
   createdAt?: Date;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   const existing = await db
     .select()
@@ -1979,7 +1998,7 @@ export async function createOrUpdatePayment(data: {
     await db
       .update(payments)
       .set({
-        status: data.status as any,
+        status: data.status,
         amount: data.amount.toString(),
         updatedAt: new Date(),
       })
@@ -1995,7 +2014,7 @@ export async function createOrUpdatePayment(data: {
       razorpayOrderId: data.razorpayOrderId || null,
       amount: data.amount.toString(),
       currency: data.currency,
-      status: data.status as any,
+      status: data.status,
       receipt: data.receipt || null,
       description: data.description || null,
       createdAt: data.createdAt || new Date(),
@@ -2018,16 +2037,16 @@ export async function getPaymentsByUserId(userId: number) {
 export async function updatePaymentRefundStatus(
   razorpayPaymentId: string,
   refundAmount: number,
-  refundStatus: string
+  refundStatus: RefundStatus
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
 
   await db
     .update(payments)
     .set({
       refundAmount: refundAmount.toString(),
-      refundStatus: refundStatus as any,
+      refundStatus,
       status: refundStatus === "full" ? "refunded" : "partially_refunded",
       updatedAt: new Date(),
     })
@@ -2054,7 +2073,7 @@ export async function getUserByApiKey(apiKey: string) {
 
 export async function updateUserApiKey(userId: number, apiKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db
     .update(users)
     .set({ apiKey, updatedAt: new Date() })
@@ -2073,7 +2092,7 @@ export async function updateUser(
   }>
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db
     .update(users)
     .set({ ...data, updatedAt: new Date() })
@@ -2087,13 +2106,13 @@ export async function recordVSCodeActivity(
   timestamp: Date
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   const id = `vsa_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   await db.insert(vscodeActivities).values({
     id,
     userId,
     type,
-    data: data as any,
+    data,
     timestamp,
   });
   return { id };
@@ -2126,7 +2145,7 @@ export async function createWebhookEndpoint(
   input: InsertWebhookEndpoint
 ): Promise<{ id: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db.insert(webhookEndpoints).values(input);
   return { id: input.id };
 }
@@ -2184,7 +2203,7 @@ export async function getActiveWebhookEndpoints(
 
 export async function deleteWebhookEndpoint(id: string): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db.delete(webhookEndpoints).where(eq(webhookEndpoints.id, id));
 }
 
@@ -2193,7 +2212,7 @@ export async function updateWebhookEndpointActive(
   isActive: boolean
 ): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db
     .update(webhookEndpoints)
     .set({ isActive, updatedAt: new Date() })
@@ -2246,7 +2265,7 @@ export async function createWebhookDelivery(
   input: InsertWebhookDelivery
 ): Promise<{ id: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db);
   await db.insert(webhookDeliveries).values(input);
   return { id: input.id };
 }

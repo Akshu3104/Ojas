@@ -42,6 +42,13 @@ export interface GetUserInfoResponse {
   name: string;
   email?: string | null;
   platform?: string | null;
+  /**
+   * Some upstream OAuth providers return an array of registered identity
+   * providers (`["REGISTERED_PLATFORM_EMAIL", ...]`) instead of a single
+   * `platform`. Kept optional so we don't break clients that send only
+   * `platform`.
+   */
+  platforms?: string[] | null;
   loginMethod?: string | null;
 }
 
@@ -65,5 +72,6 @@ export interface GetUserInfoWithJwtResponse {
   name: string;
   email?: string | null;
   platform?: string | null;
+  platforms?: string[] | null;
   loginMethod?: string | null;
 }

@@ -5,6 +5,7 @@
  *   })
  */
 import { ENV } from "./env";
+import { ExternalServiceError, InternalError } from "./errors";
 import { fetchWithTimeout } from "../utils/fetchWithTimeout";
 
 const DATA_API_TIMEOUT_MS = 10_000;
@@ -21,10 +22,14 @@ export async function callDataApi(
   options: DataApiCallOptions = {}
 ): Promise<unknown> {
   if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
+    throw new InternalError("BUILT_IN_FORGE_API_URL is not configured", {
+      safeMessage: "This data source is temporarily unavailable.",
+    });
   }
   if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
+    throw new InternalError("BUILT_IN_FORGE_API_KEY is not configured", {
+      safeMessage: "This data source is temporarily unavailable.",
+    });
   }
 
   // Build the full URL by appending the service path to the base URL
@@ -56,8 +61,18 @@ export async function callDataApi(
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(
-      `Data API request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
+    throw new ExternalServiceError(
+      `Data API request failed (${response.status} ${response.statusText})`,
+      {
+        safeMessage: "Upstream data source request failed. Please try again.",
+        context: {
+          provider: "data-api",
+          apiId,
+          status: response.status,
+          statusText: response.statusText,
+          detail,
+        },
+      }
     );
   }
 

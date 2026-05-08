@@ -7,6 +7,7 @@ import { Server as HttpServer } from "http";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import { verifyWebSocketAuth } from "./utils/security";
 import * as db from "./db";
+import { logger } from "./_core/logger";
 
 type EventType =
   | "cost_update"
@@ -51,7 +52,7 @@ class WebSocketManager {
           }
           this.connectedUsers.get(userId)!.add(socket.id);
           socket.join(`user:${userId}`);
-          console.log(`[WebSocket] User ${userId} connected: ${socket.id}`);
+          logger.info(`[WebSocket] User ${userId} connected: ${socket.id}`);
           ack?.({ success: true, userId });
         }
       );
@@ -65,7 +66,7 @@ class WebSocketManager {
             if (socketIds.size === 0) {
               this.connectedUsers.delete(userId);
             }
-            console.log(
+            logger.info(
               `[WebSocket] User ${userId} disconnected: ${socket.id}`
             );
             break;
@@ -74,7 +75,7 @@ class WebSocketManager {
       });
     });
 
-    console.log("[WebSocket] Server initialized");
+    logger.info("[WebSocket] Server initialized");
   }
 
   broadcast(message: BroadcastMessage) {

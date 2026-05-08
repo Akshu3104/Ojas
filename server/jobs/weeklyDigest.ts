@@ -1,13 +1,14 @@
 import cron from "node-cron";
 import * as db from "../db";
 import { sendWeeklyDigestEmail } from "../email";
+import { logger } from "../_core/logger";
 
 export async function runWeeklyDigest(): Promise<void> {
-  console.log("[WeeklyDigest] Starting weekly digest job...");
+  logger.info("[WeeklyDigest] Starting weekly digest job...");
 
   try {
     const users = await db.getAllUsers();
-    console.log(`[WeeklyDigest] Processing ${users.length} users`);
+    logger.info(`[WeeklyDigest] Processing ${users.length} users`);
 
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
@@ -52,13 +53,13 @@ export async function runWeeklyDigest(): Promise<void> {
         topCollection,
         dashboardUrl: `${appUrl}/dashboard`,
       }).catch(err =>
-        console.error(`[WeeklyDigest] Failed to send to ${user.email}:`, err)
+        logger.error({ err: err }, `[WeeklyDigest] Failed to send to ${user.email}`)
       );
     }
 
-    console.log("[WeeklyDigest] Weekly digest job completed");
+    logger.info("[WeeklyDigest] Weekly digest job completed");
   } catch (error) {
-    console.error("[WeeklyDigest] Error running weekly digest:", error);
+    logger.error({ err: error }, "[WeeklyDigest] Error running weekly digest");
   }
 }
 
@@ -66,17 +67,17 @@ export function scheduleWeeklyDigest(): void {
   const cronExpression = process.env.WEEKLY_DIGEST_CRON || "0 9 * * 1";
 
   if (!cron.validate(cronExpression)) {
-    console.warn(
+    logger.warn(
       `[WeeklyDigest] Invalid cron expression "${cronExpression}", skipping schedule`
     );
     return;
   }
 
-  console.log(`[WeeklyDigest] Scheduling weekly digest for ${cronExpression}`);
+  logger.info(`[WeeklyDigest] Scheduling weekly digest for ${cronExpression}`);
 
   cron.schedule(cronExpression, async () => {
     await runWeeklyDigest();
   });
 
-  console.log("[WeeklyDigest] Weekly digest scheduled successfully");
+  logger.info("[WeeklyDigest] Weekly digest scheduled successfully");
 }

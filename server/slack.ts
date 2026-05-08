@@ -4,6 +4,8 @@
  * Silently skips if SLACK_WEBHOOK_URL is not configured.
  */
 
+import { ExternalServiceError } from "./_core/errors";
+import { logger } from "./_core/logger";
 import { fetchWithTimeout } from "./utils/fetchWithTimeout";
 
 const SLACK_TIMEOUT_MS = 5_000;
@@ -43,8 +45,13 @@ export async function sendSlackKillSwitchAlert(
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
 
   if (!webhookUrl) {
-    console.log(
-      `[Slack] Webhook not configured. Kill switch triggered by user ${opts.userId} (${opts.userName}): ${opts.reason}`
+    logger.info(
+      {
+        userId: opts.userId,
+        userName: opts.userName,
+        reason: opts.reason,
+      },
+      "[Slack] Webhook not configured. Kill switch triggered"
     );
     return;
   }
@@ -115,12 +122,20 @@ export async function sendSlackKillSwitchAlert(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Slack webhook returned ${response.status}: ${await response.text()}`
+    throw new ExternalServiceError(
+      `Slack webhook returned ${response.status}`,
+      {
+        safeMessage: "Could not deliver Slack alert.",
+        context: {
+          provider: "slack",
+          status: response.status,
+          body: await response.text(),
+        },
+      }
     );
   }
 
-  console.log(`[Slack] Kill switch alert sent for user ${opts.userId}`);
+  logger.info({ userId: opts.userId }, "[Slack] Kill switch alert sent");
 }
 
 export async function sendSlackScanAlert(
@@ -129,8 +144,9 @@ export async function sendSlackScanAlert(
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
 
   if (!webhookUrl) {
-    console.log(
-      `[Slack] Webhook not configured. Scan completed for collection ${opts.collectionName}`
+    logger.info(
+      { collectionName: opts.collectionName },
+      "[Slack] Webhook not configured. Scan completed"
     );
     return;
   }
@@ -218,12 +234,23 @@ export async function sendSlackScanAlert(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Slack webhook returned ${response.status}: ${await response.text()}`
+    throw new ExternalServiceError(
+      `Slack webhook returned ${response.status}`,
+      {
+        safeMessage: "Could not deliver Slack alert.",
+        context: {
+          provider: "slack",
+          status: response.status,
+          body: await response.text(),
+        },
+      }
     );
   }
 
-  console.log(`[Slack] Scan alert sent for collection ${opts.collectionName}`);
+  logger.info(
+    { collectionName: opts.collectionName },
+    "[Slack] Scan alert sent"
+  );
 }
 
 export async function sendSlackBudgetWarning(
@@ -232,8 +259,13 @@ export async function sendSlackBudgetWarning(
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
 
   if (!webhookUrl) {
-    console.log(
-      `[Slack] Webhook not configured. Budget warning for user ${opts.userId} (${opts.userName}): ${opts.percentUsed.toFixed(1)}% used`
+    logger.info(
+      {
+        userId: opts.userId,
+        userName: opts.userName,
+        percentUsed: opts.percentUsed,
+      },
+      "[Slack] Webhook not configured. Budget warning"
     );
     return;
   }
@@ -299,10 +331,18 @@ export async function sendSlackBudgetWarning(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Slack webhook returned ${response.status}: ${await response.text()}`
+    throw new ExternalServiceError(
+      `Slack webhook returned ${response.status}`,
+      {
+        safeMessage: "Could not deliver Slack alert.",
+        context: {
+          provider: "slack",
+          status: response.status,
+          body: await response.text(),
+        },
+      }
     );
   }
 
-  console.log(`[Slack] Budget warning sent for user ${opts.userId}`);
+  logger.info({ userId: opts.userId }, "[Slack] Budget warning sent");
 }

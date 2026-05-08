@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, editorProcedure } from "../_core/trpc";
+import { InternalError } from "../_core/errors";
+import { logger } from "../_core/logger";
 import * as db from "../db";
 import { runCollectionScan } from "../services/scanService";
 import { wsManager } from "../websocket";
@@ -58,11 +60,13 @@ export const scanningRouter = router({
           pipeline.expire(counterKey, 60 * 60 * 24);
           pipeline.ttl(counterKey);
           const results = await pipeline.exec();
-          if (!results) throw new Error("Redis pipeline returned null");
+          // Caught locally below — these aren't user-facing, just used to
+          // bail out of the success path so we fall through to fail-open.
+          if (!results) throw new InternalError("Redis pipeline returned null");
           const incrResult = results[0]?.[1];
           const ttlResult = results[2]?.[1];
           if (typeof incrResult !== "number") {
-            throw new Error("Redis INCR returned non-numeric");
+            throw new InternalError("Redis INCR returned non-numeric");
           }
           used = incrResult;
           if (typeof ttlResult === "number" && ttlResult > 0) {
@@ -73,9 +77,9 @@ export const scanningRouter = router({
           // scans), we fail-open with a warning so the platform stays usable.
           // The DB-level scan record + Sentry alert on Redis errors give us
           // an audit trail. If you'd rather fail-closed, throw here instead.
-          console.warn(
-            "[scan-limit] Redis unavailable, allowing scan without rate-limit check:",
-            redisErr
+          logger.warn(
+            { err: redisErr },
+            "[scan-limit] Redis unavailable, allowing scan without rate-limit check"
           );
           used = 0;
         }

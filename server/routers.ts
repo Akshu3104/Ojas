@@ -28,6 +28,7 @@ import { paymentsRouter } from "./api/payments";
 import { webhooksRouter } from "./api/webhooks";
 
 import { vscodeExtensionRouter } from "./api/vscodeExtension";
+import { logger } from "./_core/logger";
 
 // ============================================================================
 // MAIN ROUTER - merges all individual routers
@@ -145,7 +146,7 @@ export const appRouter = router({
             }
           }
         } catch (err) {
-          console.warn("[signup] first-user promotion skipped:", err);
+          logger.warn({ err: err }, "[signup] first-user promotion skipped");
         }
 
         const sessionToken = await sdk.createSessionToken(created.openId, {
@@ -252,10 +253,7 @@ export const appRouter = router({
               expiresInHours: 24,
             });
           } catch (emailError) {
-            console.error(
-              "[Auth] Failed to send password reset email:",
-              emailError
-            );
+            logger.error({ err: emailError }, "[Auth] Failed to send password reset email");
           }
         }
         return {

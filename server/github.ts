@@ -8,6 +8,7 @@ import crypto from "crypto";
 import * as db from "./db";
 import { runCollectionScan } from "./services/scanService";
 import { sendSlackScanAlert } from "./slack";
+import { logger } from "./_core/logger";
 
 interface GitHubWebhookPayload {
   event: "push" | "pull_request";
@@ -54,7 +55,7 @@ export function verifyGitHubWebhook(
   secret: string
 ): boolean {
   if (!secret) {
-    console.warn(
+    logger.warn(
       "[GitHub] Webhook secret not configured — skipping verification"
     );
     return true; // Allow if no secret configured (dev mode)
@@ -82,7 +83,7 @@ export async function handleGitHubPush(payload: GitHubWebhookPayload): Promise<{
   const commitCount = payload.commits?.length || 0;
   const commitSha = payload.after || "";
 
-  console.log(
+  logger.info(
     `[GitHub] Push to ${payload.repository.full_name}:${branch} - ${commitCount} commits`
   );
 
@@ -92,7 +93,7 @@ export async function handleGitHubPush(payload: GitHubWebhookPayload): Promise<{
   );
 
   if (collections.length === 0) {
-    console.log(
+    logger.info(
       `[GitHub] No collections found for repo ${payload.repository.full_name}`
     );
     return {
@@ -109,7 +110,7 @@ export async function handleGitHubPush(payload: GitHubWebhookPayload): Promise<{
   let scansTriggered = 0;
   for (const collection of collections) {
     try {
-      console.log(
+      logger.info(
         `[GitHub] Triggering scan for collection ${collection.id} (${collection.name})`
       );
 
@@ -122,10 +123,7 @@ export async function handleGitHubPush(payload: GitHubWebhookPayload): Promise<{
 
       scansTriggered++;
     } catch (error) {
-      console.error(
-        `[GitHub] Failed to trigger scan for collection ${collection.id}:`,
-        error
-      );
+      logger.error({ err: error }, `[GitHub] Failed to trigger scan for collection ${collection.id}`);
     }
   }
 
@@ -152,7 +150,7 @@ export async function handleGitHubPullRequest(
 }> {
   const pr = payload.pull_request!;
 
-  console.log(
+  logger.info(
     `[GitHub] PR #${pr.number} in ${payload.repository.full_name}: ${pr.title} - ${pr.state}`
   );
 
@@ -175,7 +173,7 @@ export async function handleGitHubPullRequest(
   );
 
   if (collections.length === 0) {
-    console.log(
+    logger.info(
       `[GitHub] No collections found for repo ${payload.repository.full_name}`
     );
     return {
@@ -193,7 +191,7 @@ export async function handleGitHubPullRequest(
   let scansTriggered = 0;
   for (const collection of collections) {
     try {
-      console.log(
+      logger.info(
         `[GitHub] Triggering PR scan for collection ${collection.id} (${collection.name})`
       );
 
@@ -207,10 +205,7 @@ export async function handleGitHubPullRequest(
 
       scansTriggered++;
     } catch (error) {
-      console.error(
-        `[GitHub] Failed to trigger PR scan for collection ${collection.id}:`,
-        error
-      );
+      logger.error({ err: error }, `[GitHub] Failed to trigger PR scan for collection ${collection.id}`);
     }
   }
 

@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
+import { logger } from "./logger";
 
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
@@ -23,7 +24,7 @@ export async function setupVite(app: Express, server: Server) {
   app.use(vite.middlewares);
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
-    const nonce = (res as any).locals?.cspNonce || "";
+    const nonce = (res.locals as { cspNonce?: string }).cspNonce ?? "";
 
     try {
       const clientTemplate = path.resolve(
@@ -56,7 +57,7 @@ export function serveStatic(app: Express) {
       ? path.resolve(import.meta.dirname, "../..", "dist", "public")
       : path.resolve(import.meta.dirname, "public");
   if (!fs.existsSync(distPath)) {
-    console.error(
+    logger.error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
   }
@@ -66,7 +67,7 @@ export function serveStatic(app: Express) {
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
     const indexPath = path.resolve(distPath, "index.html");
-    const nonce = (res as any).locals?.cspNonce || "";
+    const nonce = (res.locals as { cspNonce?: string }).cspNonce ?? "";
 
     // Read and inject CSP nonce into script tags
     fs.readFile(indexPath, "utf-8", (err, data) => {

@@ -6,6 +6,7 @@
  */
 
 import crypto from "crypto";
+import { logger } from "../_core/logger";
 
 // ============================================================================
 // WEBSOCKET AUTHENTICATION FIX
@@ -98,12 +99,12 @@ export function verifyWebhookSignature(
   secret: string
 ): boolean {
   if (!secret) {
-    console.error("[Webhook] Secret not configured");
+    logger.error("[Webhook] Secret not configured");
     return false;
   }
 
   if (!signature) {
-    console.error("[Webhook] No signature provided");
+    logger.error("[Webhook] No signature provided");
     return false;
   }
 
@@ -125,7 +126,7 @@ export function verifyWebhookSignature(
 
     return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
   } catch (error) {
-    console.error("[Webhook] Signature verification error:", error);
+    logger.error({ err: error }, "[Webhook] Signature verification error");
     return false;
   }
 }

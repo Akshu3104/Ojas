@@ -9,6 +9,7 @@
  */
 
 import { invokeLLM, type Message } from "../_core/llm";
+import { logger } from "../_core/logger";
 
 export interface SummaryFinding {
   title: string;
@@ -180,10 +181,7 @@ export async function summarizeFindings(
   } catch (err) {
     // Model returned non-JSON despite the schema — fall back to raw text
     // rather than crashing the request.
-    console.warn(
-      "[findingSummarizer] LLM returned non-JSON; falling back:",
-      err
-    );
+    logger.warn({ err: err }, "[findingSummarizer] LLM returned non-JSON; falling back");
     return {
       summary: text.trim() || "Unable to generate summary at this time.",
       topRisks: [],

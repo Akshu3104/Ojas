@@ -4,6 +4,7 @@
  * Falls back to console logging when SMTP is not configured.
  */
 import nodemailer from "nodemailer";
+import { logger } from "./_core/logger";
 
 interface TeamInviteEmailOptions {
   toEmail: string;
@@ -128,10 +129,10 @@ export async function sendTeamInviteEmail(
 
   if (!config) {
     // Log to console when SMTP not configured (dev mode)
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent invite to: ${opts.toEmail}`
     );
-    console.log(`[Email] Subject: ${subject}`);
+    logger.info(`[Email] Subject: ${subject}`);
     return;
   }
 
@@ -142,7 +143,7 @@ export async function sendTeamInviteEmail(
     html,
   });
 
-  console.log(`[Email] Invite sent to ${opts.toEmail}`);
+  logger.info(`[Email] Invite sent to ${opts.toEmail}`);
 }
 
 export async function sendPasswordResetEmail(
@@ -188,10 +189,10 @@ export async function sendPasswordResetEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent password reset to: ${opts.toEmail}`
     );
-    console.log(`[Email] Reset URL: ${opts.resetUrl}`);
+    logger.info(`[Email] Reset URL: ${opts.resetUrl}`);
     return;
   }
 
@@ -202,7 +203,7 @@ export async function sendPasswordResetEmail(
     html,
   });
 
-  console.log(`[Email] Password reset sent to ${opts.toEmail}`);
+  logger.info(`[Email] Password reset sent to ${opts.toEmail}`);
 }
 
 export async function sendWelcomeEmail(
@@ -254,7 +255,7 @@ export async function sendWelcomeEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent welcome email to: ${opts.toEmail}`
     );
     return;
@@ -267,7 +268,7 @@ export async function sendWelcomeEmail(
     html,
   });
 
-  console.log(`[Email] Welcome email sent to ${opts.toEmail}`);
+  logger.info(`[Email] Welcome email sent to ${opts.toEmail}`);
 }
 
 export async function sendScanCompleteEmail(
@@ -354,7 +355,7 @@ export async function sendScanCompleteEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent scan complete email to: ${opts.toEmail}`
     );
     return;
@@ -367,7 +368,7 @@ export async function sendScanCompleteEmail(
     html,
   });
 
-  console.log(`[Email] Scan complete email sent to ${opts.toEmail}`);
+  logger.info(`[Email] Scan complete email sent to ${opts.toEmail}`);
 }
 
 export async function sendBudgetWarningEmail(
@@ -437,7 +438,7 @@ export async function sendBudgetWarningEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent budget warning to: ${opts.toEmail}`
     );
     return;
@@ -450,7 +451,7 @@ export async function sendBudgetWarningEmail(
     html,
   });
 
-  console.log(`[Email] Budget warning email sent to ${opts.toEmail}`);
+  logger.info(`[Email] Budget warning email sent to ${opts.toEmail}`);
 }
 
 // ============================================================================
@@ -527,7 +528,7 @@ export async function sendWeeklyDigestEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent weekly digest to: ${opts.toEmail}`
     );
     return;
@@ -540,7 +541,7 @@ export async function sendWeeklyDigestEmail(
     html,
   });
 
-  console.log(`[Email] Weekly digest email sent to ${opts.toEmail}`);
+  logger.info(`[Email] Weekly digest email sent to ${opts.toEmail}`);
 }
 
 // ============================================================================
@@ -604,7 +605,7 @@ export async function sendKillSwitchRecoveryEmail(
   const config = createTransport();
 
   if (!config) {
-    console.log(
+    logger.info(
       `[Email] SMTP not configured. Would have sent kill switch recovery email to: ${opts.toEmail}`
     );
     return;
@@ -617,5 +618,5 @@ export async function sendKillSwitchRecoveryEmail(
     html,
   });
 
-  console.log(`[Email] Kill switch recovery email sent to ${opts.toEmail}`);
+  logger.info(`[Email] Kill switch recovery email sent to ${opts.toEmail}`);
 }

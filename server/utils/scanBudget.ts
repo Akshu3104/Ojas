@@ -1,3 +1,4 @@
+import { logger } from "../_core/logger";
 /**
  * Diminishing-returns budget tracker for iterative scanners.
  *
@@ -16,7 +17,7 @@
  *     const newFindings = scanOne(endpoint);
  *     budget.recordIteration(newFindings);
  *   }
- *   if (budget.stopped) console.warn(budget.stopReason);
+ *   if (budget.stopped) logger.warn(budget.stopReason);
  */
 
 export type StopReason =

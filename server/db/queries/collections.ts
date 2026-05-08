@@ -14,6 +14,7 @@ import {
   tokenUsage,
 } from "../../../drizzle/schema";
 import { getDb } from "..";
+import { assertDb, ForbiddenError, NotFoundError } from "../../_core/errors";
 
 /**
  * All collections owned by a user, newest first.
@@ -135,7 +136,7 @@ export async function updateFindingStatus(
   userId: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  assertDb(db, "updateFindingStatus");
 
   const existing = await db
     .select({ id: findings.id, userId: findings.userId })
@@ -144,10 +145,14 @@ export async function updateFindingStatus(
     .limit(1);
 
   if (existing.length === 0) {
-    throw new Error("Finding not found");
+    throw new NotFoundError("Finding not found");
   }
   if (existing[0].userId !== userId) {
-    throw new Error("Access denied");
+    // Don't leak existence — same response as not-found from the client
+    // perspective, but logged distinctly.
+    throw new ForbiddenError("Access denied", {
+      context: { findingId, userId },
+    });
   }
 
   await db

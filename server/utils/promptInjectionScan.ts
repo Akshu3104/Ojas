@@ -64,17 +64,30 @@ function flattenCollection(collectionData: any): Endpoint[] {
     });
   }
 
-  // OpenAPI-style
+  // OpenAPI-style. Spec lets a path-item itself be a $ref / parameters
+  // object as well, so anything that isn't a record is treated as empty.
+  type OpenApiOperation = {
+    operationId?: string;
+    summary?: string;
+    description?: string;
+  };
   const paths = collectionData?.paths || {};
-  for (const [path, pathItem] of Object.entries(paths)) {
-    for (const [method, op] of Object.entries((pathItem as any) || {})) {
+  for (const [path, rawPathItem] of Object.entries(paths)) {
+    const pathItem =
+      rawPathItem && typeof rawPathItem === "object"
+        ? (rawPathItem as Record<string, unknown>)
+        : {};
+    for (const [method, rawOp] of Object.entries(pathItem)) {
       if (!["get", "post", "put", "delete", "patch"].includes(method)) continue;
-      const operation = op as any;
+      const operation: OpenApiOperation =
+        rawOp && typeof rawOp === "object"
+          ? (rawOp as OpenApiOperation)
+          : {};
       endpoints.push({
         url: path,
         method: method.toUpperCase(),
-        name: operation?.operationId || operation?.summary || "",
-        description: operation?.description || "",
+        name: operation.operationId || operation.summary || "",
+        description: operation.description || "",
         headers: [],
       });
     }

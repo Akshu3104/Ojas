@@ -2,6 +2,7 @@
 // Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
 
 import { ENV } from "./_core/env";
+import { ExternalServiceError, InternalError } from "./_core/errors";
 import { fetchWithTimeout } from "./utils/fetchWithTimeout";
 
 const STORAGE_TIMEOUT_MS = 15_000;
@@ -13,8 +14,12 @@ function getStorageConfig(): StorageConfig {
   const apiKey = ENV.forgeApiKey;
 
   if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+    throw new InternalError(
+      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
+      {
+        safeMessage:
+          "File storage is temporarily unavailable. Please try again shortly.",
+      }
     );
   }
 
@@ -66,10 +71,18 @@ function toFormData(
   contentType: string,
   fileName: string
 ): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
+  // Blob accepts BufferSource at runtime, but DOM lib types are stricter
+  // about Buffer (which extends Uint8Array<ArrayBufferLike>) vs the
+  // BlobPart union (Uint8Array<ArrayBuffer>). Copy the bytes into a
+  // fresh ArrayBuffer so the type is concrete instead of using `as any`.
+  let blob: Blob;
+  if (typeof data === "string") {
+    blob = new Blob([data], { type: contentType });
+  } else {
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    blob = new Blob([copy], { type: contentType });
+  }
   const form = new FormData();
   form.append("file", blob, fileName || "file");
   return form;
@@ -97,8 +110,16 @@ export async function storagePut(
 
   if (!response.ok) {
     const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`
+    throw new ExternalServiceError(
+      `Storage upload failed (${response.status} ${response.statusText})`,
+      {
+        safeMessage: "File upload failed. Please try again.",
+        context: {
+          provider: "storage-proxy",
+          status: response.status,
+          message,
+        },
+      }
     );
   }
   const url = (await response.json()).url;

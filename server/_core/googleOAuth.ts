@@ -9,6 +9,8 @@ import { OAuth2Client } from "google-auth-library";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
+import { AuthError } from "./errors";
+import { logger } from "./logger";
 import { sdk } from "./sdk";
 import { ENV } from "./env";
 
@@ -76,7 +78,7 @@ export function registerGoogleOAuthRoutes(app: Express) {
     const error = req.query.error as string | undefined;
 
     if (error) {
-      console.error("[Google OAuth] User denied access or error:", error);
+      logger.warn({ err: error }, "[Google OAuth] User denied access or error");
       res.redirect(302, "/?error=google_auth_denied");
       return;
     }
@@ -108,7 +110,9 @@ export function registerGoogleOAuthRoutes(app: Express) {
 
       // Verify the ID token and extract user info
       if (!tokens.id_token) {
-        throw new Error("No ID token returned from Google");
+        throw new AuthError("No ID token returned from Google", {
+          safeMessage: "Could not sign in with Google. Please try again.",
+        });
       }
 
       const ticket = await client.verifyIdToken({
@@ -118,7 +122,9 @@ export function registerGoogleOAuthRoutes(app: Express) {
 
       const payload = ticket.getPayload();
       if (!payload || !payload.sub) {
-        throw new Error("Invalid Google ID token payload");
+        throw new AuthError("Invalid Google ID token payload", {
+          safeMessage: "Could not sign in with Google. Please try again.",
+        });
       }
 
       // Use Google's `sub` (subject) as the stable openId
@@ -148,10 +154,13 @@ export function registerGoogleOAuthRoutes(app: Express) {
         maxAge: ONE_YEAR_MS,
       });
 
-      console.log(`[Google OAuth] User signed in: ${email ?? openId}`);
+      logger.info(
+        { user: email ?? openId },
+        "[Google OAuth] User signed in"
+      );
       res.redirect(302, "/");
     } catch (err) {
-      console.error("[Google OAuth] Callback error:", err);
+      logger.error({ err }, "[Google OAuth] Callback error");
       res.redirect(302, "/?error=google_auth_failed");
     }
   });

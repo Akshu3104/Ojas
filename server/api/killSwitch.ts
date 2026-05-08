@@ -5,6 +5,7 @@ import { sendSlackKillSwitchAlert } from "../slack";
 import { sendKillSwitchRecoveryEmail } from "../email";
 import { deliver as deliverWebhook } from "../services/webhookDelivery";
 import { toNumber, toNumberOrNull } from "../utils/decimal";
+import { logger } from "../_core/logger";
 
 export const killSwitchRouter = router({
   setBudget: editorProcedure
@@ -47,7 +48,7 @@ export const killSwitchRouter = router({
         reason: input.reason,
         currentSpend: toNumber(settings?.currentSpendUSD),
         budgetLimit: toNumber(settings?.budgetLimitUSD),
-      }).catch(err => console.warn("[KillSwitch] Slack alert failed:", err));
+      }).catch(err => logger.warn({ err: err }, "[KillSwitch] Slack alert failed"));
       // Also dispatch a kill_switch.triggered webhook for any user
       // endpoints subscribed to that event (Phase 25). Fire-and-forget.
       deliverWebhook(ctx.user.id, "kill_switch.triggered", {
@@ -56,7 +57,7 @@ export const killSwitchRouter = router({
         budgetLimit: toNumber(settings?.budgetLimitUSD),
         triggeredBy: "user",
       }).catch(err =>
-        console.warn("[KillSwitch] webhook dispatch failed:", err)
+        logger.warn({ err: err }, "[KillSwitch] webhook dispatch failed")
       );
       return { success: true };
     }),
@@ -83,7 +84,7 @@ export const killSwitchRouter = router({
           newBudgetLimit: toNumber(settings?.budgetLimitUSD, 100),
           dashboardUrl: `${process.env.APP_URL || "http://localhost:3000"}/kill-switch`,
         }).catch(err =>
-          console.warn("[KillSwitch] Recovery email failed:", err)
+          logger.warn({ err: err }, "[KillSwitch] Recovery email failed")
         );
       }
 

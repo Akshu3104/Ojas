@@ -1,5 +1,12 @@
 import { ENV } from "./env";
+import {
+  ExternalServiceError,
+  InternalError,
+  RuntimePolicyError,
+  ValidationError,
+} from "./errors";
 import { fetchWithTimeout } from "../utils/fetchWithTimeout";
+import { logger } from "./logger";
 
 // LLM completions can legitimately take ~30s for a long generation, so
 // the deadline here is generous compared to other outbound calls.
@@ -143,7 +150,7 @@ const normalizeContentPart = (
     return part;
   }
 
-  throw new Error("Unsupported message content part");
+  throw new ValidationError("Unsupported message content part");
 };
 
 const normalizeMessage = (message: Message) => {
@@ -192,13 +199,13 @@ const normalizeToolChoice = (
 
   if (toolChoice === "required") {
     if (!tools || tools.length === 0) {
-      throw new Error(
+      throw new ValidationError(
         "tool_choice 'required' was provided but no tools were configured"
       );
     }
 
     if (tools.length > 1) {
-      throw new Error(
+      throw new ValidationError(
         "tool_choice 'required' needs a single tool or specify the tool name explicitly"
       );
     }
@@ -240,7 +247,7 @@ const normalizeResponseFormat = ({
       explicitFormat.type === "json_schema" &&
       !explicitFormat.json_schema?.schema
     ) {
-      throw new Error(
+      throw new ValidationError(
         "responseFormat json_schema requires a defined schema object"
       );
     }
@@ -251,7 +258,7 @@ const normalizeResponseFormat = ({
   if (!schema) return undefined;
 
   if (!schema.name || !schema.schema) {
-    throw new Error("outputSchema requires both name and schema");
+    throw new ValidationError("outputSchema requires both name and schema");
   }
 
   return {
@@ -281,8 +288,12 @@ const resolveApiUrl = (): { url: string; key: string; model: string } => {
   }
   // Fallback to legacy Forge (Manus) API
   if (!ENV.forgeApiKey) {
-    throw new Error(
-      "No LLM API key configured. Set MINIMAX_API_KEY (recommended) or BUILT_IN_FORGE_API_KEY."
+    throw new InternalError(
+      "No LLM API key configured. Set MINIMAX_API_KEY (recommended) or BUILT_IN_FORGE_API_KEY.",
+      {
+        safeMessage:
+          "AI features are temporarily unavailable. Please try again shortly.",
+      }
     );
   }
   return {
@@ -329,7 +340,12 @@ export async function invokeLLM(
     const { getKillSwitchSettings } = await import("../db");
     const ksSettings = await getKillSwitchSettings(userId);
     if (ksSettings?.isActive) {
-      throw new Error("LLM API request blocked by DevPulse Kill Switch.");
+      throw new RuntimePolicyError(
+        "LLM API request blocked by DevPulse Kill Switch.",
+        {
+          context: { userId, policy: "kill_switch" },
+        }
+      );
     }
   }
 
@@ -386,8 +402,18 @@ export async function invokeLLM(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed (${model}): ${response.status} ${response.statusText} – ${errorText}`
+    throw new ExternalServiceError(
+      `LLM invoke failed (${model}): ${response.status} ${response.statusText}`,
+      {
+        safeMessage: "AI request failed. Please try again.",
+        context: {
+          provider: "llm",
+          model,
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        },
+      }
     );
   }
 
@@ -419,7 +445,7 @@ export async function invokeLLM(
           costUSD
         );
       } catch (err) {
-        console.warn("[LLM] Failed to record token usage:", err);
+        logger.warn({ err: err }, "[LLM] Failed to record token usage");
       }
     });
   }
