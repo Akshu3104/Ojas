@@ -20,9 +20,11 @@ function Textarea({
     onKeyDown: handleKeyDown,
   } = useComposition<HTMLTextAreaElement>({
     onKeyDown: e => {
-      // Check if this is an Enter key that should be blocked
+      // Check if this is an Enter key that should be blocked.
+      // See input.tsx for why we narrow nativeEvent rather than cast.
+      const native = e.nativeEvent as { isComposing?: boolean };
       const isComposing =
-        (e.nativeEvent as any).isComposing ||
+        native.isComposing === true ||
         dialogComposition.justEndedComposing();
 
       // If Enter key is pressed while composing or just after composition ended,

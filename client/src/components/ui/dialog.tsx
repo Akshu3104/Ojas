@@ -103,8 +103,11 @@ function DialogContent({
   const handleEscapeKeyDown = React.useCallback(
     (e: KeyboardEvent) => {
       // Check both the native isComposing property and our context state
-      // This handles Safari's timing issues with composition events
-      const isCurrentlyComposing = (e as any).isComposing || isComposing();
+      // This handles Safari's timing issues with composition events.
+      // KeyboardEvent.isComposing is in the DOM spec but not always
+      // present on the typing surface, so we narrow rather than cast.
+      const native = e as KeyboardEvent & { isComposing?: boolean };
+      const isCurrentlyComposing = native.isComposing === true || isComposing();
 
       // If IME is composing, prevent dialog from closing
       if (isCurrentlyComposing) {

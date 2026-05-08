@@ -16,7 +16,11 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV, validateEnv } from "./env";
-import { logger } from "./logger";
+import {
+  accessLogMiddleware,
+  logger,
+  requestIdMiddleware,
+} from "./logger";
 import { sdk } from "./sdk";
 import { wsManager } from "../websocket";
 import {
@@ -208,6 +212,11 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // ── Request ID + correlation ID + per-request logger ─────────────────────
+  // Must be the very first middleware so every other handler (including
+  // CORS / helmet errors) can reference req.id when something goes wrong.
+  app.use(requestIdMiddleware());
+
   // ── CORS allowlist (must run before helmet) ──────────────────────────────
   // The Next.js dashboard (devpulse-frontend) is deployed on a different
   // origin from the API in most production setups, so we explicitly opt
@@ -349,6 +358,10 @@ async function startServer() {
   // ── Body parsers with 50MB limit for collection uploads ───────────────────
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // ── Access log (after body parsers so log fires once per request, but
+  // before app routes so 404s are still captured). ─────────────────────────
+  app.use(accessLogMiddleware());
 
   // ── Rate limiting ──────────────────────────────────────────────────────────
   const globalLimiter = rateLimit({
@@ -800,7 +813,7 @@ async function startServer() {
 
         res.json({ format, data, filename: originalName, userId: user.id });
       } catch (error) {
-        console.error("[Upload] Collection upload error:", error);
+        logger.error({ err: error }, "[Upload] Collection upload error");
         res.status(500).json({ error: "Upload processing failed" });
       }
     }
@@ -846,7 +859,7 @@ async function startServer() {
           res.json({ status: "ignored", event });
         }
       } catch (error) {
-        console.error("[GitHub] Webhook processing error:", error);
+        logger.error({ err: error }, "[GitHub] Webhook processing error");
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -864,16 +877,25 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(
-      `[Server] Port ${preferredPort} is busy, using port ${port} instead`
+    logger.warn(
+      { preferredPort, port },
+      "[Server] Preferred port busy, using fallback"
     );
   }
 
   server.listen(port, () => {
-    console.log(`[Server] Running on http://localhost:${port}/`);
-    console.log(`[Server] Mode: ${process.env.NODE_ENV ?? "development"}`);
+    logger.info(
+      {
+        port,
+        mode: process.env.NODE_ENV ?? "development",
+      },
+      "[Server] Listening"
+    );
     if (!ENV.isProduction) {
-      console.log(`[Server] Health check: http://localhost:${port}/api/health`);
+      logger.info(
+        { healthUrl: `http://localhost:${port}/api/health` },
+        "[Server] Health check"
+      );
     }
 
     scheduleWeeklyDigest();
@@ -881,15 +903,15 @@ async function startServer() {
 
   // ── Graceful shutdown ──────────────────────────────────────────────────────
   process.on("SIGTERM", () => {
-    console.log("[Server] SIGTERM received. Shutting down gracefully...");
+    logger.info("[Server] SIGTERM received. Shutting down gracefully");
     server.close(() => {
-      console.log("[Server] Closed.");
+      logger.info("[Server] Closed");
       process.exit(0);
     });
   });
 }
 
 startServer().catch(err => {
-  console.error("[Server] Fatal startup error:", err);
+  logger.fatal({ err }, "[Server] Fatal startup error");
   process.exit(1);
 });

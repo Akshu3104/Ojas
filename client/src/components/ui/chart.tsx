@@ -76,19 +76,32 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  // XSS audit (Phase 1.6): the only `dangerouslySetInnerHTML` site in
+  // the entire app. Inputs are: `id` (generated client-side via
+  // React.useId, never user-controlled), `key` (config object keys
+  // declared in source code), and `color` (CSS values from the
+  // developer-provided ChartConfig). User-supplied values never reach
+  // any of these slots — but we still strip out CSS-injection chars
+  // (`<`, `>`, `"`, `;`) defensively in case a future caller wires in
+  // user data without realizing this is a CSS sink.
+  const cssIdent = (raw: string) => raw.replace(/[^a-zA-Z0-9_-]/g, "");
+  const cssValue = (raw: string) => raw.replace(/[<>;"'\\]/g, "");
   return (
     <style
+      // eslint-disable-next-line react/no-danger -- audited above
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart=${cssIdent(id)}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    return color
+      ? `  --color-${cssIdent(key)}: ${cssValue(color)};`
+      : null;
   })
   .join("\n")}
 }

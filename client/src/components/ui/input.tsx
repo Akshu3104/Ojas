@@ -22,8 +22,12 @@ function Input({
   } = useComposition<HTMLInputElement>({
     onKeyDown: e => {
       // Check if this is an Enter key that should be blocked
+      // `isComposing` is on the underlying native KeyboardEvent (DOM
+       // spec) but not on React's typing for a regular keyboard event.
+       // Narrow the unknown view of nativeEvent rather than `as any`.
+      const native = e.nativeEvent as { isComposing?: boolean };
       const isComposing =
-        (e.nativeEvent as any).isComposing ||
+        native.isComposing === true ||
         dialogComposition.justEndedComposing();
 
       // If Enter key is pressed while composing or just after composition ended,

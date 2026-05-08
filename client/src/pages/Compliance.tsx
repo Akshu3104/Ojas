@@ -15,6 +15,28 @@ import { toast } from "sonner";
 
 type ReportType = "pci_dss" | "owasp";
 
+type ComplianceRequirement = {
+  id: string;
+  title: string;
+  description: string;
+  status: "met" | "not_met" | "manual_review";
+};
+
+function asRequirements(value: unknown): ComplianceRequirement[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (r): r is ComplianceRequirement =>
+      typeof r === "object" &&
+      r !== null &&
+      typeof (r as ComplianceRequirement).id === "string" &&
+      typeof (r as ComplianceRequirement).title === "string" &&
+      typeof (r as ComplianceRequirement).description === "string" &&
+      ["met", "not_met", "manual_review"].includes(
+        (r as ComplianceRequirement).status
+      )
+  );
+}
+
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   pci_dss: "PCI DSS 4.0",
   owasp: "OWASP Top 10",
@@ -120,7 +142,7 @@ export default function Compliance() {
         <table>
           <thead><tr><th>ID</th><th>Requirement</th><th>Description</th><th>Status</th></tr></thead>
           <tbody>
-            ${(currentReport.requirements as any[])
+            ${asRequirements(currentReport.requirements)
               .map(
                 r => `
               <tr>
@@ -343,7 +365,7 @@ export default function Compliance() {
               </h3>
             </div>
             <div className="divide-y divide-border">
-              {(currentReport.requirements as any[]).map(req => (
+              {asRequirements(currentReport.requirements).map(req => (
                 <div key={req.id} className="p-4 flex items-start gap-4">
                   {STATUS_ICONS[req.status] ?? (
                     <AlertTriangle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
