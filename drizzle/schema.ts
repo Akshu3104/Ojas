@@ -803,3 +803,272 @@ export const mcpInvocationLog = mysqlTable(
 
 export type McpInvocation = typeof mcpInvocationLog.$inferSelect;
 export type InsertMcpInvocation = typeof mcpInvocationLog.$inferInsert;
+
+// ============================================================================
+// SPRINT 3: AI Runtime Governance — gateway audit, token meters, shadow AI,
+// continuous red-team, auto-fix engine, security copilot.
+// ============================================================================
+
+/**
+ * Gateway audit log — every request that crossed the inline LLM gateway.
+ * One row per request, regardless of decision (allowed/blocked/errored).
+ * Drives the runtime dashboard, anomaly detection, and the cost meter.
+ */
+export const gatewayAudit = mysqlTable(
+  "gateway_audit",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    requestId: varchar("requestId", { length: 64 }).notNull(),
+    model: varchar("model", { length: 96 }).notNull(),
+    provider: varchar("provider", { length: 32 }),
+    decision: mysqlEnum("decision", ["allowed", "blocked", "errored"])
+      .notNull()
+      .default("allowed"),
+    blockReason: varchar("blockReason", { length: 96 }),
+    promptTokens: int("promptTokens").default(0).notNull(),
+    completionTokens: int("completionTokens").default(0).notNull(),
+    totalTokens: int("totalTokens").default(0).notNull(),
+    estimatedCostUsd: decimal("estimatedCostUsd", { precision: 10, scale: 6 })
+      .default("0")
+      .notNull(),
+    promptFingerprint: varchar("promptFingerprint", { length: 64 }),
+    latencyMs: int("latencyMs"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    createdAtIdx: index("createdAt_idx").on(table.createdAt),
+    decisionIdx: index("decision_idx").on(table.decision),
+    modelIdx: index("model_idx").on(table.model),
+  })
+);
+export type GatewayAuditRow = typeof gatewayAudit.$inferSelect;
+export type InsertGatewayAuditRow = typeof gatewayAudit.$inferInsert;
+
+/**
+ * Per-tenant daily token caps. The gateway consults these inline to enforce
+ * hard / soft budgets without polling the cost meter on every request.
+ */
+export const tokenBudgets = mysqlTable(
+  "token_budgets",
+  {
+    userId: int("userId").primaryKey(),
+    dailyTokenLimit: int("dailyTokenLimit"),
+    mode: mysqlEnum("mode", ["soft", "hard"]).default("soft").notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type TokenBudgetRow = typeof tokenBudgets.$inferSelect;
+export type InsertTokenBudgetRow = typeof tokenBudgets.$inferInsert;
+
+/**
+ * Shadow-AI events — observations of LLM traffic from sources OTHER than the
+ * sanctioned gateway. Fed by log ingestion, network taps, or agent telemetry.
+ * Events flagged "rogue" are surfaced in the dashboard.
+ */
+export const shadowAiEvents = mysqlTable(
+  "shadow_ai_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    source: varchar("source", { length: 64 }).notNull(),
+    detectedHost: varchar("detectedHost", { length: 192 }).notNull(),
+    detectedModel: varchar("detectedModel", { length: 96 }),
+    isAllowlisted: boolean("isAllowlisted").default(false).notNull(),
+    severity: mysqlEnum("severity", ["info", "low", "medium", "high", "critical"])
+      .default("medium")
+      .notNull(),
+    rawSignals: json("rawSignals"),
+    occurredAt: timestamp("occurredAt").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    severityIdx: index("severity_idx").on(table.severity),
+    detectedHostIdx: index("detectedHost_idx").on(table.detectedHost),
+  })
+);
+export type ShadowAiEventRow = typeof shadowAiEvents.$inferSelect;
+export type InsertShadowAiEventRow = typeof shadowAiEvents.$inferInsert;
+
+/**
+ * Allowlist / denylist of LLM hosts and models per tenant. Gates the
+ * shadow-AI classifier — if a host isn't here, it's considered "shadow."
+ */
+export const aiAllowlist = mysqlTable(
+  "ai_allowlist",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    /** "host" — match by hostname; "model" — match by model id. */
+    kind: mysqlEnum("kind", ["host", "model"]).notNull(),
+    pattern: varchar("pattern", { length: 192 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+  })
+);
+export type AiAllowlistRow = typeof aiAllowlist.$inferSelect;
+export type InsertAiAllowlistRow = typeof aiAllowlist.$inferInsert;
+
+/**
+ * Continuous red-team runs — one row per scheduled (or manually triggered)
+ * attack simulation against the customer's LLM gateway endpoint. Stores
+ * aggregate scores; per-payload outcomes go in `redteamFindings`.
+ */
+export const redteamRuns = mysqlTable(
+  "redteam_runs",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    target: varchar("target", { length: 192 }).notNull(),
+    triggeredBy: mysqlEnum("triggeredBy", ["manual", "schedule", "api"])
+      .default("manual")
+      .notNull(),
+    status: mysqlEnum("status", [
+      "pending",
+      "running",
+      "completed",
+      "failed",
+    ])
+      .default("pending")
+      .notNull(),
+    totalPayloads: int("totalPayloads").default(0).notNull(),
+    blockedCount: int("blockedCount").default(0).notNull(),
+    leakedCount: int("leakedCount").default(0).notNull(),
+    erroredCount: int("erroredCount").default(0).notNull(),
+    /** Out of 100. */
+    securityScore: int("securityScore"),
+    durationMs: int("durationMs"),
+    startedAt: timestamp("startedAt"),
+    finishedAt: timestamp("finishedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    statusIdx: index("status_idx").on(table.status),
+    createdAtIdx: index("createdAt_idx").on(table.createdAt),
+  })
+);
+export type RedteamRunRow = typeof redteamRuns.$inferSelect;
+export type InsertRedteamRunRow = typeof redteamRuns.$inferInsert;
+
+export const redteamFindings = mysqlTable(
+  "redteam_findings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    runId: varchar("runId", { length: 64 }).notNull(),
+    payloadId: varchar("payloadId", { length: 64 }).notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    severity: mysqlEnum("severity", ["Low", "Medium", "High", "Critical"])
+      .notNull(),
+    outcome: mysqlEnum("outcome", ["blocked", "leaked", "errored"]).notNull(),
+    /** First 200 chars of the response, sanitized. */
+    sample: text("sample"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    runIdIdx: index("runId_idx").on(table.runId),
+    outcomeIdx: index("outcome_idx").on(table.outcome),
+  })
+);
+export type RedteamFindingRow = typeof redteamFindings.$inferSelect;
+export type InsertRedteamFindingRow = typeof redteamFindings.$inferInsert;
+
+/**
+ * Continuous red-team schedule entries. Fanned out by the cron loop.
+ */
+export const redteamSchedules = mysqlTable(
+  "redteam_schedules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    target: varchar("target", { length: 192 }).notNull(),
+    /** Cron expression (UTC). */
+    cron: varchar("cron", { length: 64 }).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    lastRunAt: timestamp("lastRunAt"),
+    nextRunAt: timestamp("nextRunAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    activeIdx: index("active_idx").on(table.isActive),
+  })
+);
+export type RedteamScheduleRow = typeof redteamSchedules.$inferSelect;
+export type InsertRedteamScheduleRow = typeof redteamSchedules.$inferInsert;
+
+/**
+ * Auto-fix suggestions — generated remediation snippets per finding type.
+ * The auto-fix engine is templated, deterministic, and never proposes a fix
+ * that wasn't explicitly modelled — no LLM-generated patches that could
+ * themselves contain injection payloads.
+ */
+export const autofixSuggestions = mysqlTable(
+  "autofix_suggestions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    findingType: varchar("findingType", { length: 64 }).notNull(),
+    findingRef: varchar("findingRef", { length: 128 }),
+    title: varchar("title", { length: 192 }).notNull(),
+    rationale: text("rationale"),
+    languageHint: varchar("languageHint", { length: 32 }),
+    snippet: text("snippet").notNull(),
+    status: mysqlEnum("status", ["open", "applied", "dismissed"])
+      .default("open")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    statusIdx: index("status_idx").on(table.status),
+    findingTypeIdx: index("findingType_idx").on(table.findingType),
+  })
+);
+export type AutofixSuggestionRow = typeof autofixSuggestions.$inferSelect;
+export type InsertAutofixSuggestionRow =
+  typeof autofixSuggestions.$inferInsert;
+
+/**
+ * Security copilot conversations — chat-over-data sessions where the user
+ * asks questions about their own runtime data. The conversations are
+ * scoped to the user; the retrieval layer never crosses tenants.
+ */
+export const copilotConversations = mysqlTable(
+  "copilot_conversations",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    title: varchar("title", { length: 192 }).notNull().default("New chat"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+  })
+);
+export type CopilotConversationRow = typeof copilotConversations.$inferSelect;
+export type InsertCopilotConversationRow =
+  typeof copilotConversations.$inferInsert;
+
+export const copilotMessages = mysqlTable(
+  "copilot_messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    conversationId: varchar("conversationId", { length: 64 }).notNull(),
+    role: mysqlEnum("role", ["user", "assistant", "system"]).notNull(),
+    content: text("content").notNull(),
+    /** JSON-encoded list of references (table+rowId pairs). */
+    references: json("references"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    conversationIdx: index("conversation_idx").on(table.conversationId),
+  })
+);
+export type CopilotMessageRow = typeof copilotMessages.$inferSelect;
+export type InsertCopilotMessageRow = typeof copilotMessages.$inferInsert;

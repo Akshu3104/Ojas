@@ -24,9 +24,34 @@ import {
   webhookEndpoints,
   webhookDeliveries,
   processedWebhookEvents,
+  gatewayAudit,
+  tokenBudgets,
+  shadowAiEvents,
+  aiAllowlist,
+  redteamRuns,
+  redteamFindings,
+  redteamSchedules,
+  autofixSuggestions,
+  copilotConversations,
+  copilotMessages,
   type WebhookEndpoint,
   type InsertWebhookEndpoint,
   type InsertWebhookDelivery,
+  type InsertGatewayAuditRow,
+  type GatewayAuditRow,
+  type ShadowAiEventRow,
+  type InsertShadowAiEventRow,
+  type AiAllowlistRow,
+  type RedteamRunRow,
+  type InsertRedteamRunRow,
+  type RedteamFindingRow,
+  type InsertRedteamFindingRow,
+  type RedteamScheduleRow,
+  type AutofixSuggestionRow,
+  type InsertAutofixSuggestionRow,
+  type CopilotConversationRow,
+  type CopilotMessageRow,
+  type InsertCopilotMessageRow,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import {
@@ -2366,4 +2391,467 @@ export async function getRecentFindingsForUser(userId: number, limit = 5) {
     ...r,
     collectionName: r.collectionName ?? "Unknown",
   }));
+}
+
+// ============================================================================
+// SPRINT 3: AI Runtime Governance helpers
+// ============================================================================
+
+interface GatewayAuditPayload {
+  tenantId?: string;
+  requestId?: string;
+  model?: string;
+  provider?: string;
+  decision: "allowed" | "blocked" | "errored";
+  blockReason?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  promptFingerprint?: string;
+  startedAt?: number;
+  endedAt?: number;
+}
+
+/**
+ * Best-effort cost-per-1k-tokens table. Real systems sync this from the
+ * provider's pricing page; we ship sensible defaults so the dashboard isn't
+ * blank on day one. Numbers are USD per 1,000 tokens, blended.
+ */
+const COST_TABLE: Record<string, { prompt: number; completion: number }> = {
+  "gpt-4o": { prompt: 0.0025, completion: 0.01 },
+  "gpt-4o-mini": { prompt: 0.00015, completion: 0.0006 },
+  "gpt-4-turbo": { prompt: 0.01, completion: 0.03 },
+  "gpt-3.5-turbo": { prompt: 0.0005, completion: 0.0015 },
+  "o1-preview": { prompt: 0.015, completion: 0.06 },
+  "o1-mini": { prompt: 0.003, completion: 0.012 },
+  "claude-3-5-sonnet-20241022": { prompt: 0.003, completion: 0.015 },
+  "claude-3-5-haiku-20241022": { prompt: 0.0008, completion: 0.004 },
+  "claude-3-opus-20240229": { prompt: 0.015, completion: 0.075 },
+};
+
+function estimateCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number
+): number {
+  const lookup =
+    COST_TABLE[model] ??
+    COST_TABLE[
+      Object.keys(COST_TABLE).find(k => model.startsWith(k.split("-")[0]!)) ??
+        "gpt-3.5-turbo"
+    ] ??
+    { prompt: 0.0005, completion: 0.0015 };
+  return (
+    (promptTokens / 1000) * lookup.prompt +
+    (completionTokens / 1000) * lookup.completion
+  );
+}
+
+export async function recordGatewayAudit(
+  payload: GatewayAuditPayload
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const userId = Number.parseInt(payload.tenantId ?? "0", 10);
+  if (!Number.isFinite(userId) || userId <= 0) return;
+  const promptTokens = payload.usage?.prompt_tokens ?? 0;
+  const completionTokens = payload.usage?.completion_tokens ?? 0;
+  const totalTokens = payload.usage?.total_tokens ?? promptTokens + completionTokens;
+  const model = payload.model ?? "unknown";
+  const cost = estimateCostUsd(model, promptTokens, completionTokens);
+  const latencyMs =
+    payload.startedAt && payload.endedAt
+      ? Math.max(0, payload.endedAt - payload.startedAt)
+      : null;
+  const row: InsertGatewayAuditRow = {
+    userId,
+    requestId: payload.requestId ?? crypto.randomUUID(),
+    model,
+    decision: payload.decision,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    estimatedCostUsd: cost.toFixed(6),
+    ...(payload.provider ? { provider: payload.provider } : {}),
+    ...(payload.blockReason ? { blockReason: payload.blockReason } : {}),
+    ...(payload.promptFingerprint
+      ? { promptFingerprint: payload.promptFingerprint }
+      : {}),
+    ...(latencyMs !== null ? { latencyMs } : {}),
+  };
+  await db.insert(gatewayAudit).values(row);
+
+  // Mirror into tokenUsage so existing dashboards keep working.
+  if (payload.decision === "allowed" && totalTokens > 0) {
+    await db.insert(tokenUsage).values({
+      id: crypto.randomUUID(),
+      userId,
+      model,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      costUSD: cost.toFixed(6),
+    });
+  }
+}
+
+export async function getGatewayAuditRecent(
+  userId: number,
+  limit = 100
+): Promise<GatewayAuditRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(gatewayAudit)
+    .where(eq(gatewayAudit.userId, userId))
+    .orderBy(desc(gatewayAudit.createdAt))
+    .limit(Math.min(limit, 1000));
+}
+
+export async function getGatewayDailyTotals(
+  userId: number,
+  days = 30
+): Promise<
+  Array<{
+    date: string;
+    totalTokens: number;
+    blockedCount: number;
+    allowedCount: number;
+    estimatedCostUsd: number;
+  }>
+> {
+  const db = await getDb();
+  if (!db) return [];
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() - days);
+  const rows = await db
+    .select({
+      date: sql<string>`DATE(${gatewayAudit.createdAt})`,
+      totalTokens: sql<number>`SUM(${gatewayAudit.totalTokens})`,
+      blockedCount: sql<number>`SUM(CASE WHEN ${gatewayAudit.decision} = 'blocked' THEN 1 ELSE 0 END)`,
+      allowedCount: sql<number>`SUM(CASE WHEN ${gatewayAudit.decision} = 'allowed' THEN 1 ELSE 0 END)`,
+      estimatedCostUsd: sql<string>`SUM(${gatewayAudit.estimatedCostUsd})`,
+    })
+    .from(gatewayAudit)
+    .where(
+      and(
+        eq(gatewayAudit.userId, userId),
+        gte(gatewayAudit.createdAt, start)
+      )
+    )
+    .groupBy(sql`DATE(${gatewayAudit.createdAt})`)
+    .orderBy(sql`DATE(${gatewayAudit.createdAt})`);
+  return rows.map(r => ({
+    date: r.date,
+    totalTokens: Number(r.totalTokens ?? 0),
+    blockedCount: Number(r.blockedCount ?? 0),
+    allowedCount: Number(r.allowedCount ?? 0),
+    estimatedCostUsd: Number(r.estimatedCostUsd ?? 0),
+  }));
+}
+
+export async function getTokenBudgetState(
+  userId: number
+): Promise<{
+  windowStart: string;
+  used: number;
+  limit: number | null;
+  mode: "soft" | "hard";
+}> {
+  const db = await getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  if (!db) {
+    return { windowStart: today, used: 0, limit: null, mode: "soft" };
+  }
+  const cap = await db
+    .select()
+    .from(tokenBudgets)
+    .where(eq(tokenBudgets.userId, userId))
+    .limit(1);
+  const windowStart = today;
+  const used = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${gatewayAudit.totalTokens}), 0)`,
+    })
+    .from(gatewayAudit)
+    .where(
+      and(
+        eq(gatewayAudit.userId, userId),
+        sql`DATE(${gatewayAudit.createdAt}) = ${today}`
+      )
+    );
+  const usedTotal = Number(used[0]?.total ?? 0);
+  const settings = cap[0];
+  return {
+    windowStart,
+    used: usedTotal,
+    limit: settings?.dailyTokenLimit ?? null,
+    mode: settings?.mode ?? "soft",
+  };
+}
+
+export async function setTokenBudget(
+  userId: number,
+  dailyTokenLimit: number | null,
+  mode: "soft" | "hard"
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db
+    .insert(tokenBudgets)
+    .values({
+      userId,
+      dailyTokenLimit,
+      mode,
+    })
+    .onDuplicateKeyUpdate({
+      set: { dailyTokenLimit, mode },
+    });
+}
+
+// ── Shadow AI ────────────────────────────────────────────────────────────────
+
+export async function listAiAllowlist(
+  userId: number
+): Promise<AiAllowlistRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(aiAllowlist)
+    .where(eq(aiAllowlist.userId, userId));
+}
+
+export async function addAiAllowlistEntry(
+  userId: number,
+  kind: "host" | "model",
+  pattern: string
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(aiAllowlist).values({ userId, kind, pattern });
+}
+
+export async function removeAiAllowlistEntry(
+  userId: number,
+  id: number
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db
+    .delete(aiAllowlist)
+    .where(and(eq(aiAllowlist.id, id), eq(aiAllowlist.userId, userId)));
+}
+
+export async function recordShadowAiEvent(
+  row: InsertShadowAiEventRow
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(shadowAiEvents).values(row);
+}
+
+export async function listShadowAiEvents(
+  userId: number,
+  limit = 100
+): Promise<ShadowAiEventRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(shadowAiEvents)
+    .where(eq(shadowAiEvents.userId, userId))
+    .orderBy(desc(shadowAiEvents.occurredAt))
+    .limit(Math.min(limit, 1000));
+}
+
+// ── Red-team ─────────────────────────────────────────────────────────────────
+
+export async function createRedteamRun(
+  row: InsertRedteamRunRow
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(redteamRuns).values(row);
+}
+
+export async function updateRedteamRun(
+  id: string,
+  patch: Partial<RedteamRunRow>
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.update(redteamRuns).set(patch).where(eq(redteamRuns.id, id));
+}
+
+export async function getRedteamRun(
+  id: string
+): Promise<RedteamRunRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(redteamRuns)
+    .where(eq(redteamRuns.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listRedteamRuns(
+  userId: number,
+  limit = 50
+): Promise<RedteamRunRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(redteamRuns)
+    .where(eq(redteamRuns.userId, userId))
+    .orderBy(desc(redteamRuns.createdAt))
+    .limit(Math.min(limit, 200));
+}
+
+export async function recordRedteamFindings(
+  rows: InsertRedteamFindingRow[]
+): Promise<void> {
+  if (rows.length === 0) return;
+  const db = await getDb(); assertDb(db);
+  await db.insert(redteamFindings).values(rows);
+}
+
+export async function listRedteamFindings(
+  runId: string
+): Promise<RedteamFindingRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(redteamFindings)
+    .where(eq(redteamFindings.runId, runId))
+    .orderBy(desc(redteamFindings.createdAt));
+}
+
+export async function listDueRedteamSchedules(): Promise<RedteamScheduleRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const now = new Date();
+  return db
+    .select()
+    .from(redteamSchedules)
+    .where(
+      and(
+        eq(redteamSchedules.isActive, true),
+        sql`(${redteamSchedules.nextRunAt} IS NULL OR ${redteamSchedules.nextRunAt} <= ${now})`
+      )
+    );
+}
+
+export async function setRedteamSchedule(
+  userId: number,
+  target: string,
+  cron: string,
+  isActive = true
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(redteamSchedules).values({
+    userId,
+    target,
+    cron,
+    isActive,
+  });
+}
+
+export async function markRedteamScheduleRan(
+  id: number,
+  nextRunAt: Date
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db
+    .update(redteamSchedules)
+    .set({ lastRunAt: new Date(), nextRunAt })
+    .where(eq(redteamSchedules.id, id));
+}
+
+// ── Auto-fix ────────────────────────────────────────────────────────────────
+
+export async function recordAutofix(
+  row: InsertAutofixSuggestionRow
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(autofixSuggestions).values(row);
+}
+
+export async function listAutofix(
+  userId: number,
+  status: "open" | "applied" | "dismissed" | undefined = undefined
+): Promise<AutofixSuggestionRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const where = status
+    ? and(
+        eq(autofixSuggestions.userId, userId),
+        eq(autofixSuggestions.status, status)
+      )
+    : eq(autofixSuggestions.userId, userId);
+  return db
+    .select()
+    .from(autofixSuggestions)
+    .where(where)
+    .orderBy(desc(autofixSuggestions.createdAt));
+}
+
+export async function updateAutofixStatus(
+  userId: number,
+  id: number,
+  status: "open" | "applied" | "dismissed"
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db
+    .update(autofixSuggestions)
+    .set({ status })
+    .where(
+      and(
+        eq(autofixSuggestions.id, id),
+        eq(autofixSuggestions.userId, userId)
+      )
+    );
+}
+
+// ── Security Copilot ────────────────────────────────────────────────────────
+
+export async function createCopilotConversation(
+  userId: number,
+  id: string,
+  title: string
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(copilotConversations).values({ id, userId, title });
+}
+
+export async function listCopilotConversations(
+  userId: number
+): Promise<CopilotConversationRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(copilotConversations)
+    .where(eq(copilotConversations.userId, userId))
+    .orderBy(desc(copilotConversations.updatedAt));
+}
+
+export async function appendCopilotMessage(
+  row: InsertCopilotMessageRow
+): Promise<void> {
+  const db = await getDb(); assertDb(db);
+  await db.insert(copilotMessages).values(row);
+}
+
+export async function listCopilotMessages(
+  conversationId: string
+): Promise<CopilotMessageRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(copilotMessages)
+    .where(eq(copilotMessages.conversationId, conversationId))
+    .orderBy(copilotMessages.createdAt);
 }
