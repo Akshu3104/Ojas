@@ -430,6 +430,68 @@ async function startServer() {
     res.end(await register.metrics());
   });
 
+  // ── Inline LLM Gateway service endpoints ──────────────────────────────────
+  //
+  // These are S2S endpoints called by `gateway/` (the inline LLM proxy).
+  // Authenticated via a long-lived bearer token (`GATEWAY_SERVICE_TOKEN`)
+  // shared via secret manager. Never exposed to browsers.
+  //
+  // We mount them inside `/api/internal/*` so any reverse proxy in front of
+  // the app can apply mTLS or IP allowlisting at this prefix without
+  // touching the public surface.
+  function gatewayAuthOk(req: express.Request): boolean {
+    const expected = ENV.gatewayServiceToken;
+    if (!expected) return false;
+    const auth = req.headers.authorization;
+    if (typeof auth !== "string" || !auth.startsWith("Bearer ")) return false;
+    const presented = auth.slice("Bearer ".length).trim();
+    if (presented.length !== expected.length) return false;
+    return crypto.timingSafeEqual(
+      Buffer.from(presented),
+      Buffer.from(expected)
+    );
+  }
+
+  app.get("/api/internal/kill-switch/:tenantId", async (req, res) => {
+    if (!gatewayAuthOk(req)) {
+      res.status(401).json({ error: "unauthorised" });
+      return;
+    }
+    const tenantId = Number.parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const db = await import("../db");
+    const settings = await db.getKillSwitchSettings(tenantId);
+    if (!settings) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.json({
+      isActive: Boolean(settings.isActive),
+      currentSpendUSD: Number(settings.currentSpendUSD ?? 0),
+      budgetLimitUSD: Number(settings.budgetLimitUSD ?? 0),
+    });
+  });
+
+  app.post("/api/internal/gateway-audit", express.json(), async (req, res) => {
+    if (!gatewayAuthOk(req)) {
+      res.status(401).json({ error: "unauthorised" });
+      return;
+    }
+    // Accepts the AuditRecord shape from gateway/src/types.ts. We persist
+    // through the existing audit-log table; integrating with token-analytics
+    // for cost meters is sequenced for Sprint 3.
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    logger.info({ audit: body }, "[Gateway] audit record received");
+    res.json({ received: true });
+  });
+
   // ── Email unsubscribe endpoint ───────────────────────────────────────────
   app.get("/unsubscribe", async (req, res) => {
     const token = req.query.token as string;

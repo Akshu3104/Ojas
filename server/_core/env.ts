@@ -101,6 +101,22 @@ const EnvSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .optional(),
+
+  // Inline LLM gateway integration. The gateway calls back to the server's
+  // `/api/internal/*` endpoints with `Authorization: Bearer ${TOKEN}`. In
+  // production this MUST be set to a long random string and shared with the
+  // gateway via a secret manager. Empty in dev disables gateway endpoints.
+  GATEWAY_SERVICE_TOKEN: isProduction
+    ? z.string().min(32, "GATEWAY_SERVICE_TOKEN must be at least 32 chars in prod").optional()
+    : z.string().default(""),
+
+  // Stripe — USD billing rail (Sprint 2 scaffolding). All three are optional
+  // because we ship the Stripe code path disabled by default; once the live
+  // keys are populated, the checkout endpoints route USD-region buyers
+  // through Stripe instead of Razorpay.
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 });
 
 const parsed = (() => {
@@ -159,6 +175,14 @@ export const ENV = {
   frontendUrl: parsed.FRONTEND_URL,
   githubWebhookSecret: parsed.GITHUB_WEBHOOK_SECRET,
   logLevel: parsed.LOG_LEVEL,
+  gatewayServiceToken: parsed.GATEWAY_SERVICE_TOKEN ?? "",
+
+  stripeSecretKey: parsed.STRIPE_SECRET_KEY ?? "",
+  stripePublishableKey: parsed.STRIPE_PUBLISHABLE_KEY ?? "",
+  stripeWebhookSecret: parsed.STRIPE_WEBHOOK_SECRET ?? "",
+  stripeEnabled: Boolean(
+    parsed.STRIPE_SECRET_KEY && parsed.STRIPE_WEBHOOK_SECRET
+  ),
 } as const;
 
 /**
