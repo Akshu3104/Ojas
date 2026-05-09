@@ -685,3 +685,121 @@ export type ProcessedWebhookEvent =
   typeof processedWebhookEvents.$inferSelect;
 export type InsertProcessedWebhookEvent =
   typeof processedWebhookEvents.$inferInsert;
+
+/**
+ * MCP Server registry — Sprint 2 scaffolding for "MCP Governance".
+ *
+ * An MCP server (Model Context Protocol) is a process that exposes one or
+ * more *tools* an LLM agent can call. DevPulse models the registry, the
+ * permission graph (which user/agent may call which tool on which server),
+ * and an immutable audit log of every tool invocation routed through the
+ * gateway. The actual MCP transport (stdio / streamable-http / sse) is
+ * pluggable; the schema below is transport-agnostic.
+ */
+export const mcpServers = mysqlTable(
+  "mcp_servers",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    url: varchar("url", { length: 1024 }),
+    transport: mysqlEnum("transport", [
+      "stdio",
+      "streamable-http",
+      "sse",
+    ]).notNull(),
+    /**
+     * Capability fingerprint — JSON snapshot of the tool list the server
+     * advertised at last discovery, used to detect drift / capability
+     * additions that may need re-review.
+     */
+    capabilityFingerprint: json("capabilityFingerprint"),
+    riskScore: int("riskScore").default(0).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    discoveredAt: timestamp("discoveredAt").defaultNow().notNull(),
+    lastSeenAt: timestamp("lastSeenAt"),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+  })
+);
+
+export type McpServer = typeof mcpServers.$inferSelect;
+export type InsertMcpServer = typeof mcpServers.$inferInsert;
+
+/**
+ * MCP Tools — denormalised list of tools a registered MCP server exposes.
+ * One row per (server, tool name). Lets us run permission-graph queries
+ * (which agent can call this tool) without hitting the JSON capability
+ * blob.
+ */
+export const mcpTools = mysqlTable(
+  "mcp_tools",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    serverId: varchar("serverId", { length: 64 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    /**
+     * Risk classification produced by the static analyzer. `unsafe` means
+     * the tool can mutate external state without confirmation (e.g.
+     * filesystem write, payment, mass email). The dashboard surfaces
+     * unsafe tools on a separate review screen.
+     */
+    riskClass: mysqlEnum("riskClass", [
+      "safe",
+      "elevated",
+      "unsafe",
+      "unknown",
+    ])
+      .default("unknown")
+      .notNull(),
+    /** Schema for input parameters (JSON Schema). */
+    inputSchema: json("inputSchema"),
+    isApproved: boolean("isApproved").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    serverIdIdx: index("serverId_idx").on(table.serverId),
+  })
+);
+
+export type McpTool = typeof mcpTools.$inferSelect;
+export type InsertMcpTool = typeof mcpTools.$inferInsert;
+
+/**
+ * MCP Tool Invocation Log — append-only audit trail of every tool call
+ * routed through the DevPulse gateway. Source of truth for the "permission
+ * graph" view (who used what when), abuse detection, and compliance
+ * evidence.
+ *
+ * NOTE: we log a SHA-256 fingerprint of the `arguments` payload by default,
+ * never the raw arguments. The dashboard only fetches raw args on demand
+ * and only for users with the `mcp:audit:read-raw` permission.
+ */
+export const mcpInvocationLog = mysqlTable(
+  "mcp_invocation_log",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: int("userId").notNull(),
+    serverId: varchar("serverId", { length: 64 }).notNull(),
+    toolId: varchar("toolId", { length: 64 }).notNull(),
+    /** Gateway request id. Joins back to gateway audit records. */
+    requestId: varchar("requestId", { length: 64 }),
+    /** SHA-256 fingerprint of input args, base16. */
+    argsFingerprint: varchar("argsFingerprint", { length: 64 }),
+    decision: mysqlEnum("decision", ["allowed", "blocked", "errored"]).notNull(),
+    blockReason: varchar("blockReason", { length: 128 }),
+    durationMs: int("durationMs"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    serverIdIdx: index("serverId_idx").on(table.serverId),
+    toolIdIdx: index("toolId_idx").on(table.toolId),
+    createdAtIdx: index("createdAt_idx").on(table.createdAt),
+  })
+);
+
+export type McpInvocation = typeof mcpInvocationLog.$inferSelect;
+export type InsertMcpInvocation = typeof mcpInvocationLog.$inferInsert;

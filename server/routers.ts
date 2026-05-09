@@ -28,6 +28,7 @@ import { paymentsRouter } from "./api/payments";
 import { webhooksRouter } from "./api/webhooks";
 
 import { vscodeExtensionRouter } from "./api/vscodeExtension";
+import { mcpGovernanceRouter } from "./api/mcpGovernance";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -319,6 +320,7 @@ export const appRouter = router({
   admin: adminRouter,
   payment: paymentsRouter,
   webhooks: webhooksRouter,
+  mcpGovernance: mcpGovernanceRouter,
 });
 
 export type AppRouter = typeof appRouter;
