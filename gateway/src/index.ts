@@ -29,6 +29,7 @@ import { createTokenBudgetPolicy } from "./policies/tokenBudget.js";
 import { createToolApprovalPolicy } from "./policies/toolApproval.js";
 import { createOpenAIProvider } from "./providers/openai.js";
 import { createAnthropicProvider } from "./providers/anthropic.js";
+import { createBedrockProvider } from "./providers/bedrock.js";
 
 interface GatewayDeps {
   env: GatewayEnv;
@@ -483,6 +484,23 @@ if (isMain) {
       createAnthropicProvider({
         apiKey: env.DEVPULSE_GATEWAY_UPSTREAM_ANTHROPIC_KEY,
         baseUrl: env.DEVPULSE_GATEWAY_UPSTREAM_ANTHROPIC_BASE,
+        enablePromptCaching: env.DEVPULSE_GATEWAY_ANTHROPIC_PROMPT_CACHING,
+      })
+    );
+  }
+  if (
+    env.DEVPULSE_GATEWAY_BEDROCK_REGION &&
+    env.DEVPULSE_GATEWAY_BEDROCK_ACCESS_KEY_ID &&
+    env.DEVPULSE_GATEWAY_BEDROCK_SECRET_ACCESS_KEY
+  ) {
+    providers.push(
+      createBedrockProvider({
+        region: env.DEVPULSE_GATEWAY_BEDROCK_REGION,
+        accessKeyId: env.DEVPULSE_GATEWAY_BEDROCK_ACCESS_KEY_ID,
+        secretAccessKey: env.DEVPULSE_GATEWAY_BEDROCK_SECRET_ACCESS_KEY,
+        ...(env.DEVPULSE_GATEWAY_BEDROCK_SESSION_TOKEN
+          ? { sessionToken: env.DEVPULSE_GATEWAY_BEDROCK_SESSION_TOKEN }
+          : {}),
       })
     );
   }

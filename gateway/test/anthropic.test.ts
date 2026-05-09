@@ -77,6 +77,82 @@ describe("Anthropic provider", () => {
     expect(body.tools).toBeDefined();
   });
 
+  it("enables prompt caching when configured (header + cache_control on system)", async () => {
+    const captured: { headers?: Record<string, string>; body?: unknown } = {};
+    const fake = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      captured.headers = init?.headers as Record<string, string>;
+      captured.body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return new Response(
+        JSON.stringify({
+          id: "msg_cache",
+          model: "claude-3-5-sonnet-20241022",
+          content: [{ type: "text", text: "ok" }],
+          usage: {
+            input_tokens: 4,
+            output_tokens: 2,
+            cache_creation_input_tokens: 100,
+            cache_read_input_tokens: 50,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    const provider = createAnthropicProvider({
+      apiKey: "sk-ant-fake",
+      baseUrl: "http://upstream.invalid",
+      fetchImpl: fake as unknown as typeof fetch,
+      enablePromptCaching: true,
+    });
+    const resp = await provider.invoke({
+      model: "claude-3-5-sonnet-20241022",
+      messages: [
+        { role: "system", content: "you are a long, expensive system prompt" },
+        { role: "user", content: "hello" },
+      ],
+    });
+    expect(captured.headers?.["anthropic-beta"]).toBe(
+      "prompt-caching-2024-07-31"
+    );
+    const body = captured.body as Record<string, unknown>;
+    expect(Array.isArray(body.system)).toBe(true);
+    const sysBlocks = body.system as Array<Record<string, unknown>>;
+    expect(sysBlocks[0]?.cache_control).toEqual({ type: "ephemeral" });
+    expect(resp.usage?.prompt_tokens).toBe(154);
+    expect(resp.usage?.total_tokens).toBe(156);
+  });
+
+  it("does not send caching beta header when not enabled", async () => {
+    const captured: { headers?: Record<string, string>; body?: unknown } = {};
+    const fake = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      captured.headers = init?.headers as Record<string, string>;
+      captured.body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return new Response(
+        JSON.stringify({
+          id: "msg_nc",
+          model: "claude-3-haiku",
+          content: [{ type: "text", text: "ok" }],
+          usage: { input_tokens: 5, output_tokens: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    const provider = createAnthropicProvider({
+      apiKey: "sk-ant-fake",
+      baseUrl: "http://upstream.invalid",
+      fetchImpl: fake as unknown as typeof fetch,
+    });
+    await provider.invoke({
+      model: "claude-3-haiku",
+      messages: [
+        { role: "system", content: "be brief" },
+        { role: "user", content: "hi" },
+      ],
+    });
+    expect(captured.headers?.["anthropic-beta"]).toBeUndefined();
+    const body = captured.body as Record<string, unknown>;
+    expect(typeof body.system).toBe("string");
+  });
+
   it("turns OpenAI-style tool messages into tool_result blocks", async () => {
     const captured: { body?: unknown } = {};
     const fake = vi

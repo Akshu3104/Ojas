@@ -21,6 +21,15 @@ interface AnthropicProviderConfig {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * Enable Anthropic prompt caching. When true:
+   *   - Sends the `anthropic-beta: prompt-caching-2024-07-31` header.
+   *   - Marks the system prompt (if any) with `cache_control: ephemeral`.
+   *   - Passes through `cache_control` already set on individual content blocks.
+   *   - Surfaces `cache_creation_input_tokens` and `cache_read_input_tokens`
+   *     on the normalized usage when the API returns them.
+   */
+  enablePromptCaching?: boolean;
 }
 
 const ANTHROPIC_MODEL_PREFIXES = ["claude-"];
@@ -32,6 +41,7 @@ interface AnthropicContentBlock {
   name?: string;
   input?: unknown;
   content?: unknown;
+  cache_control?: { type: "ephemeral" };
 }
 
 interface AnthropicMessageResp {
@@ -39,7 +49,12 @@ interface AnthropicMessageResp {
   model: string;
   content: AnthropicContentBlock[];
   stop_reason?: string;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 interface AnthropicMessage {
@@ -113,17 +128,42 @@ export function createAnthropicProvider(
   function buildBody(request: LlmRequest, stream: boolean): unknown {
     const { system, messages } = normalizeMessages(request.messages);
     const tools = (request.extra as { tools?: unknown } | undefined)?.tools;
+    const useCache = cfg.enablePromptCaching === true;
+    const systemField = system.length === 0
+      ? undefined
+      : useCache
+        ? [
+            {
+              type: "text" as const,
+              text: system,
+              cache_control: { type: "ephemeral" as const },
+            },
+          ]
+        : system;
     return {
       model: request.model,
       max_tokens: request.max_tokens ?? 1024,
       ...(request.temperature !== undefined
         ? { temperature: request.temperature }
         : {}),
-      ...(system.length > 0 ? { system } : {}),
+      ...(systemField !== undefined ? { system: systemField } : {}),
       messages,
       ...(tools ? { tools } : {}),
       ...(stream ? { stream: true } : {}),
     };
+  }
+
+  function buildHeaders(streaming: boolean): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-api-key": cfg.apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+    if (streaming) headers.Accept = "text/event-stream";
+    if (cfg.enablePromptCaching) {
+      headers["anthropic-beta"] = "prompt-caching-2024-07-31";
+    }
+    return headers;
   }
 
   return {
@@ -139,11 +179,7 @@ export function createAnthropicProvider(
       try {
         const resp = await fetchFn(`${cfg.baseUrl}/v1/messages`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": cfg.apiKey,
-            "anthropic-version": "2023-06-01",
-          },
+          headers: buildHeaders(false),
           body: JSON.stringify(buildBody(request, false)),
           signal: controller.signal,
         });
@@ -166,10 +202,15 @@ export function createAnthropicProvider(
           ...(json.usage
             ? {
                 usage: {
-                  prompt_tokens: json.usage.input_tokens ?? 0,
+                  prompt_tokens:
+                    (json.usage.input_tokens ?? 0) +
+                    (json.usage.cache_creation_input_tokens ?? 0) +
+                    (json.usage.cache_read_input_tokens ?? 0),
                   completion_tokens: json.usage.output_tokens ?? 0,
                   total_tokens:
                     (json.usage.input_tokens ?? 0) +
+                    (json.usage.cache_creation_input_tokens ?? 0) +
+                    (json.usage.cache_read_input_tokens ?? 0) +
                     (json.usage.output_tokens ?? 0),
                 },
               }
@@ -182,12 +223,7 @@ export function createAnthropicProvider(
     async invokeStream(request: LlmRequest): Promise<Response> {
       const resp = await fetchFn(`${cfg.baseUrl}/v1/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": cfg.apiKey,
-          "anthropic-version": "2023-06-01",
-          Accept: "text/event-stream",
-        },
+        headers: buildHeaders(true),
         body: JSON.stringify(buildBody(request, true)),
       });
       if (!resp.ok) {

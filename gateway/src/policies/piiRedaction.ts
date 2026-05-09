@@ -59,6 +59,36 @@ const DEFAULT_RULES: RedactionRule[] = [
     placeholder: "<PAN_REDACTED>",
   },
   {
+    id: "ifsc-in",
+    // Indian IFSC bank code — 4 letters, '0', 6 alphanumerics.
+    pattern: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g,
+    placeholder: "<IFSC_REDACTED>",
+  },
+  {
+    id: "passport-in",
+    // Indian passport — 1 letter (capital A-Z, but typically not Q/X/Z), 7 digits.
+    pattern: /\b[A-PR-WY][0-9]{7}\b/g,
+    placeholder: "<PASSPORT_IN_REDACTED>",
+  },
+  {
+    id: "voter-id-in",
+    // EPIC voter ID — 3 letters, 7 digits.
+    pattern: /\b[A-Z]{3}\d{7}\b/g,
+    placeholder: "<VOTER_ID_REDACTED>",
+  },
+  {
+    id: "phone-in",
+    // Indian mobile — +91 / 91 / 0 prefix optional, then 10 digits starting 6-9.
+    pattern: /\b(?:\+?91[-\s]?|0)?[6-9]\d{9}\b/g,
+    placeholder: "<PHONE_IN_REDACTED>",
+  },
+  {
+    id: "gstin-in",
+    // GSTIN — 2 digits state, 10 char PAN, 1 entity code, 1 'Z', 1 checksum.
+    pattern: /\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/g,
+    placeholder: "<GSTIN_REDACTED>",
+  },
+  {
     id: "phone-e164",
     pattern: /\b\+?\d[\d\s().-]{7,16}\b/g,
     placeholder: "<PHONE_REDACTED>",

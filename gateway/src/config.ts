@@ -28,6 +28,14 @@ const envSchema = z.object({
     .string()
     .url()
     .default("https://api.anthropic.com"),
+  DEVPULSE_GATEWAY_ANTHROPIC_PROMPT_CACHING: z
+    .string()
+    .default("false")
+    .transform(s => s === "true"),
+  DEVPULSE_GATEWAY_BEDROCK_REGION: z.string().optional(),
+  DEVPULSE_GATEWAY_BEDROCK_ACCESS_KEY_ID: z.string().optional(),
+  DEVPULSE_GATEWAY_BEDROCK_SECRET_ACCESS_KEY: z.string().optional(),
+  DEVPULSE_GATEWAY_BEDROCK_SESSION_TOKEN: z.string().optional(),
   /** DevPulse server URL for kill-switch lookups + audit fan-out. */
   DEVPULSE_GATEWAY_DEVPULSE_URL: z.string().url().optional(),
   DEVPULSE_GATEWAY_DEVPULSE_TOKEN: z.string().optional(),
