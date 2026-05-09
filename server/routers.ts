@@ -29,6 +29,7 @@ import { webhooksRouter } from "./api/webhooks";
 
 import { vscodeExtensionRouter } from "./api/vscodeExtension";
 import { mcpGovernanceRouter } from "./api/mcpGovernance";
+import { runtimeGovernanceRouter } from "./api/runtimeGovernance";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -321,6 +322,7 @@ export const appRouter = router({
   payment: paymentsRouter,
   webhooks: webhooksRouter,
   mcpGovernance: mcpGovernanceRouter,
+  runtimeGovernance: runtimeGovernanceRouter,
 });
 
 export type AppRouter = typeof appRouter;

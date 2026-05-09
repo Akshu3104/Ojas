@@ -29,6 +29,7 @@ import {
   verifyGitHubWebhook,
 } from "../github";
 import { scheduleWeeklyDigest } from "../jobs/weeklyDigest";
+import { startRedTeamScheduler } from "../services/redTeamScheduler";
 import { verifyWebhookSignature } from "../utils/security";
 
 // ============================================================================
@@ -480,17 +481,101 @@ async function startServer() {
       res.status(401).json({ error: "unauthorised" });
       return;
     }
-    // Accepts the AuditRecord shape from gateway/src/types.ts. We persist
-    // through the existing audit-log table; integrating with token-analytics
-    // for cost meters is sequenced for Sprint 3.
     const body = req.body as Record<string, unknown> | undefined;
     if (!body) {
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    logger.info({ audit: body }, "[Gateway] audit record received");
+    // Persist into the cost-meter (tokenUsage) and shadow-AI / runtime
+    // monitoring streams so dashboards reflect gateway traffic in real time.
+    const audit = body as {
+      tenantId?: string;
+      requestId?: string;
+      model?: string;
+      provider?: string;
+      decision?: "allowed" | "blocked" | "errored";
+      blockReason?: string;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+      promptFingerprint?: string;
+      startedAt?: number;
+      endedAt?: number;
+    };
+    const db = await import("../db");
+    try {
+      await db.recordGatewayAudit({
+        tenantId: audit.tenantId,
+        requestId: audit.requestId,
+        model: audit.model,
+        provider: audit.provider,
+        decision: audit.decision ?? "allowed",
+        blockReason: audit.blockReason,
+        usage: audit.usage,
+        promptFingerprint: audit.promptFingerprint,
+        startedAt: audit.startedAt,
+        endedAt: audit.endedAt,
+      });
+    } catch (err) {
+      logger.warn({ err }, "[Gateway] audit persist failed");
+    }
+    logger.info(
+      {
+        tenantId: audit.tenantId,
+        requestId: audit.requestId,
+        model: audit.model,
+        provider: audit.provider,
+        decision: audit.decision,
+      },
+      "[Gateway] audit record received"
+    );
     res.json({ received: true });
   });
+
+  // ── Token-budget query (gateway -> server) ─────────────────────────────────
+  // Returns the tenant's quota for the current UTC day plus current usage.
+  // Used by the gateway's token-budget policy to enforce hard caps inline.
+  app.get("/api/internal/token-budget/:tenantId", async (req, res) => {
+    if (!gatewayAuthOk(req)) {
+      res.status(401).json({ error: "unauthorised" });
+      return;
+    }
+    const tenantId = Number.parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      res.status(400).json({ error: "invalid_tenant_id" });
+      return;
+    }
+    const db = await import("../db");
+    const budget = await db.getTokenBudgetState(tenantId);
+    res.json(budget);
+  });
+
+  // ── Shadow AI ingestion (gateway -> server, also accepts agent telemetry) ──
+  // Accepts a batch of observed LLM calls from the gateway or from a side-car
+  // network probe and runs them through the shadow-AI detector. This is the
+  // entry point that lets us surface "rogue LLM API traffic" without an eBPF
+  // probe — any sufficiently rich log stream can feed it.
+  app.post(
+    "/api/internal/shadow-ai-events",
+    express.json({ limit: "1mb" }),
+    async (req, res) => {
+      if (!gatewayAuthOk(req)) {
+        res.status(401).json({ error: "unauthorised" });
+        return;
+      }
+      const body = req.body as { events?: unknown[] } | undefined;
+      if (!body || !Array.isArray(body.events)) {
+        res.status(400).json({ error: "invalid_body" });
+        return;
+      }
+      const db = await import("../db");
+      const { ingestShadowAiEvents } = await import("../services/shadowAi");
+      const summary = await ingestShadowAiEvents(db, body.events);
+      res.json(summary);
+    }
+  );
 
   // ── Email unsubscribe endpoint ───────────────────────────────────────────
   app.get("/unsubscribe", async (req, res) => {
@@ -961,6 +1046,10 @@ async function startServer() {
     }
 
     scheduleWeeklyDigest();
+    if (process.env.DEVPULSE_REDTEAM_SCHEDULER !== "disabled") {
+      startRedTeamScheduler(60_000);
+      logger.info("[Server] Continuous red-team scheduler started");
+    }
   });
 
   // ── Graceful shutdown ──────────────────────────────────────────────────────

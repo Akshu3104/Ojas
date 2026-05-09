@@ -9,6 +9,10 @@ import * as db from "./db";
 import { runCollectionScan } from "./services/scanService";
 import { sendSlackScanAlert } from "./slack";
 import { logger } from "./_core/logger";
+import {
+  scanPullRequestFiles,
+  type PullRequestFile,
+} from "./services/secretScanner";
 
 interface GitHubWebhookPayload {
   event: "push" | "pull_request";
@@ -218,4 +222,64 @@ export async function handleGitHubPullRequest(
     message: `Triggered ${scansTriggered} PR scan(s) for ${collections.length} collection(s)`,
     scansTriggered,
   };
+}
+
+/**
+ * Secret-scan a set of files from a GitHub PR (already fetched via the
+ * GitHub API by the caller). Returns the findings; the caller is responsible
+ * for posting a check-run / commit-status back to GitHub if desired.
+ */
+export interface PullRequestSecretScanInput {
+  repoFullName: string;
+  prNumber: number;
+  commitSha: string;
+  files: PullRequestFile[];
+}
+
+export interface PullRequestSecretScanOutput {
+  repository: string;
+  prNumber: number;
+  filesScanned: number;
+  findings: Array<{
+    file: string;
+    ruleId: string;
+    description: string;
+    severity: "high" | "critical";
+    line: number;
+    matchPreview: string;
+  }>;
+  shouldBlockMerge: boolean;
+}
+
+export async function secretScanPullRequest(
+  input: PullRequestSecretScanInput
+): Promise<PullRequestSecretScanOutput> {
+  const result = scanPullRequestFiles(input.files);
+  const out: PullRequestSecretScanOutput = {
+    repository: input.repoFullName,
+    prNumber: input.prNumber,
+    filesScanned: result.filesScanned,
+    findings: result.findings.map(f => ({
+      file: f.file,
+      ruleId: f.ruleId,
+      description: f.description,
+      severity: f.severity,
+      line: f.line,
+      matchPreview: f.matchPreview,
+    })),
+    shouldBlockMerge: result.findings.some(f => f.severity === "critical"),
+  };
+  if (result.totalFindings > 0) {
+    logger.warn(
+      {
+        repo: input.repoFullName,
+        prNumber: input.prNumber,
+        commitSha: input.commitSha,
+        findings: result.totalFindings,
+        critical: result.findings.filter(f => f.severity === "critical").length,
+      },
+      "[GitHub] secret-scan findings on PR"
+    );
+  }
+  return out;
 }
