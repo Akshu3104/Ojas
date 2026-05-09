@@ -19,6 +19,7 @@ import { FindingsTreeProvider } from "./findingsProvider";
 import { DevPulseStatusBar } from "./statusBar";
 import { HeartbeatService } from "./heartbeat";
 import { SecurityWebviewPanel } from "./securityWebviewPanel";
+import { registerGatewayCommand } from "./gatewayTester";
 
 const SECRET_API_KEY = "devpulse.apiKey";
 
@@ -262,6 +263,8 @@ export async function activate(
       }
     })
   );
+
+  await registerGatewayCommand(context, readApiKey);
 
   heartbeat.start();
 }

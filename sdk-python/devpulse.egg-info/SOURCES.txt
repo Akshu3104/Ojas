@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+devpulse/__init__.py
+devpulse/client.py
+devpulse/py.typed
+devpulse.egg-info/PKG-INFO
+devpulse.egg-info/SOURCES.txt
+devpulse.egg-info/dependency_links.txt
+devpulse.egg-info/requires.txt
+devpulse.egg-info/top_level.txt
+tests/test_client.py

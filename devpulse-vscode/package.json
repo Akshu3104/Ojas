@@ -82,6 +82,10 @@
       {
         "command": "devpulse.generateApiKey",
         "title": "DevPulse: Generate API Key"
+      },
+      {
+        "command": "devpulse.testPromptThroughGateway",
+        "title": "DevPulse: Test prompt through gateway"
       }
     ],
     "viewsContainers": {
@@ -147,6 +151,11 @@
           "type": "boolean",
           "default": true,
           "description": "Send file-change activity events (never includes file contents)."
+        },
+        "devpulse.gatewayUrl": {
+          "type": "string",
+          "default": "http://localhost:8081",
+          "description": "Base URL of the DevPulse inline LLM gateway (default: http://localhost:8081 for local dev; override to e.g. https://gateway.your-company.com when self-hosted)."
         }
       }
     }

@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { OfflineBanner } from "./components/OfflineBanner";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Invite from "./pages/Invite";
@@ -145,6 +146,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
+          <OfflineBanner />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
