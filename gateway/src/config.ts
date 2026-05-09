@@ -39,6 +39,15 @@ const envSchema = z.object({
     .string()
     .default("true")
     .transform(s => s === "true"),
+  /**
+   * Tool-approval policy mode:
+   *   - "audit"  → log denied tools but still forward upstream (default for
+   *                onboarding so customers see what would be blocked)
+   *   - "enforce"→ hard-block any tool not on the tenant's approved list
+   */
+  DEVPULSE_GATEWAY_TOOL_MODE: z
+    .enum(["audit", "enforce"])
+    .default("audit"),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),

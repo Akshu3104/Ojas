@@ -16,6 +16,7 @@ import { loadEnv, parseDevApiKeys, type GatewayEnv } from "./config.js";
 import {
   type AuditRecord,
   type LlmRequest,
+  type LlmTokenUsage,
   type PolicyDecision,
   type Provider,
   type RequestContext,
@@ -24,6 +25,8 @@ import {
 import { createKillSwitchPolicy } from "./policies/killSwitch.js";
 import { createPromptInjectionPolicy } from "./policies/promptInjection.js";
 import { createPiiRedactionPolicy } from "./policies/piiRedaction.js";
+import { createTokenBudgetPolicy } from "./policies/tokenBudget.js";
+import { createToolApprovalPolicy } from "./policies/toolApproval.js";
 import { createOpenAIProvider } from "./providers/openai.js";
 import { createAnthropicProvider } from "./providers/anthropic.js";
 
@@ -133,6 +136,19 @@ export function createGateway(deps: GatewayDeps): Express {
 
       // 5. Forward upstream.
       try {
+        if (llmRequest.stream === true && provider.invokeStream) {
+          await streamUpstream({
+            provider,
+            request: llmRequest,
+            ctx,
+            res,
+            tenantId,
+            startedAt,
+            log,
+            emitAudit: deps.emitAudit,
+          });
+          return;
+        }
         const llmResponse = await provider.invoke(llmRequest);
         const audit: AuditRecord = {
           requestId: ctx.requestId,
@@ -248,6 +264,20 @@ function parseRequest(body: unknown): ParseSuccess | ParseFailure {
   // We don't validate the message shape strictly — providers will reject
   // malformed messages downstream and we don't want to drift from OpenAI's
   // schema as it evolves.
+  // Gather provider-specific fields (tools, response_format, …) under `extra`
+  // so policies (e.g. toolApproval) can inspect them and providers can pass
+  // them through verbatim.
+  const known = new Set([
+    "model",
+    "messages",
+    "temperature",
+    "max_tokens",
+    "stream",
+  ]);
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(rec)) {
+    if (!known.has(k)) extra[k] = v;
+  }
   const result: LlmRequest = {
     model: rec.model,
     messages: rec.messages as LlmRequest["messages"],
@@ -258,6 +288,7 @@ function parseRequest(body: unknown): ParseSuccess | ParseFailure {
       ? { max_tokens: rec.max_tokens }
       : {}),
     ...(typeof rec.stream === "boolean" ? { stream: rec.stream } : {}),
+    ...(Object.keys(extra).length > 0 ? { extra } : {}),
   };
   return { ok: true, value: result };
 }
@@ -287,6 +318,124 @@ function respondError(
   res.status(status).json({
     error: { code, message, ...(detail ? { detail } : {}) },
   });
+}
+
+/** PII patterns mirrored from policies/piiRedaction.ts for output side. */
+const STREAM_REDACTORS: Array<{ rx: RegExp; replacement: string }> = [
+  { rx: /[\w.-]+@[\w.-]+\.[A-Za-z]{2,}/g, replacement: "[REDACTED_EMAIL]" },
+  {
+    rx: /\bsk-[A-Za-z0-9-_]{16,}\b/g,
+    replacement: "[REDACTED_OPENAI_KEY]",
+  },
+  {
+    rx: /\bAKIA[0-9A-Z]{16}\b/g,
+    replacement: "[REDACTED_AWS_ACCESS_KEY]",
+  },
+  {
+    rx: /\b\d{3}-\d{2}-\d{4}\b/g,
+    replacement: "[REDACTED_SSN]",
+  },
+];
+
+function redactStreamLine(line: string): string {
+  let out = line;
+  for (const r of STREAM_REDACTORS) out = out.replace(r.rx, r.replacement);
+  return out;
+}
+
+interface StreamUpstreamArgs {
+  provider: Provider;
+  request: LlmRequest;
+  ctx: RequestContext;
+  res: Response;
+  tenantId: string;
+  startedAt: number;
+  log: pino.Logger;
+  emitAudit: (record: AuditRecord) => Promise<void>;
+}
+
+async function streamUpstream(args: StreamUpstreamArgs): Promise<void> {
+  const { provider, request, ctx, res, tenantId, startedAt, log, emitAudit } =
+    args;
+  if (!provider.invokeStream) {
+    res.status(501).json({
+      error: {
+        code: "stream_unsupported",
+        message: `Provider ${provider.id} does not support streaming`,
+      },
+    });
+    return;
+  }
+  const upstream = await provider.invokeStream(request);
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  let usage: LlmTokenUsage | undefined;
+  let buffer = "";
+  if (!upstream.body) {
+    res.end();
+    return;
+  }
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl = buffer.indexOf("\n");
+      while (nl !== -1) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        nl = buffer.indexOf("\n");
+        if (line.startsWith("data: ")) {
+          const payload = line.slice(6);
+          if (payload === "[DONE]") {
+            res.write("data: [DONE]\n\n");
+            continue;
+          }
+          // Try to extract token usage if the provider sent it.
+          try {
+            const event = JSON.parse(payload) as {
+              usage?: LlmTokenUsage;
+            };
+            if (event.usage) usage = event.usage;
+          } catch {
+            // partial / non-JSON event — ignore parse errors
+          }
+          res.write(`data: ${redactStreamLine(payload)}\n\n`);
+        } else if (line.length > 0) {
+          res.write(`${redactStreamLine(line)}\n`);
+        } else {
+          res.write("\n");
+        }
+      }
+    }
+    if (buffer.length > 0) res.write(redactStreamLine(buffer));
+  } catch (err) {
+    log.error({ err }, "[Gateway] stream relay failed");
+  } finally {
+    res.end();
+    const audit: AuditRecord = {
+      requestId: ctx.requestId,
+      tenantId,
+      startedAt,
+      endedAt: Date.now(),
+      model: request.model,
+      provider: provider.id,
+      decision: "allowed",
+      ...(usage ? { usage } : {}),
+      promptFingerprint: fingerprint(request),
+    };
+    emitAudit(audit).catch(err =>
+      log.warn({ err }, "[Audit] emit failed")
+    );
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -347,6 +496,14 @@ if (isMain) {
         ? { serviceToken: env.DEVPULSE_GATEWAY_DEVPULSE_TOKEN }
         : {}),
     }),
+    createTokenBudgetPolicy({
+      ...(env.DEVPULSE_GATEWAY_DEVPULSE_URL
+        ? { devpulseUrl: env.DEVPULSE_GATEWAY_DEVPULSE_URL }
+        : {}),
+      ...(env.DEVPULSE_GATEWAY_DEVPULSE_TOKEN
+        ? { serviceToken: env.DEVPULSE_GATEWAY_DEVPULSE_TOKEN }
+        : {}),
+    }),
     createPromptInjectionPolicy({
       enabled: env.DEVPULSE_GATEWAY_BLOCK_INJECTIONS,
       onMatch: ({ payload }) =>
@@ -359,6 +516,13 @@ if (isMain) {
       enabled: env.DEVPULSE_GATEWAY_REDACT_PII,
       onRedaction: ev =>
         logger.info(ev, "[Policy] PII redaction applied"),
+    }),
+    createToolApprovalPolicy({
+      mode: env.DEVPULSE_GATEWAY_TOOL_MODE,
+      // Default approval hook: if no DevPulse server is wired, allow all tools.
+      // Once wired, this hook should call /api/internal/tool-approval and
+      // honor the tenant's MCP governance configuration.
+      isToolApproved: () => true,
     }),
   ];
 
@@ -404,7 +568,13 @@ if (isMain) {
       {
         port: env.DEVPULSE_GATEWAY_PORT,
         providers: providers.map(p => p.id),
-        policies: ["killSwitch", "promptInjection", "piiRedaction"],
+        policies: [
+          "killSwitch",
+          "tokenBudget",
+          "promptInjection",
+          "piiRedaction",
+          "toolApproval",
+        ],
       },
       "DevPulse Gateway listening"
     );

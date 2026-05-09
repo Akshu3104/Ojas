@@ -105,5 +105,35 @@ export function createOpenAIProvider(cfg: OpenAIProviderConfig): Provider {
         clearTimeout(timer);
       }
     },
+    async invokeStream(request: LlmRequest): Promise<Response> {
+      const body = {
+        model: request.model,
+        messages: request.messages,
+        stream: true,
+        ...(request.temperature !== undefined
+          ? { temperature: request.temperature }
+          : {}),
+        ...(request.max_tokens !== undefined
+          ? { max_tokens: request.max_tokens }
+          : {}),
+        ...(request.extra ?? {}),
+      };
+      const resp = await fetchFn(`${cfg.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cfg.apiKey}`,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(
+          `OpenAI streaming upstream returned ${resp.status}: ${text.slice(0, 500)}`
+        );
+      }
+      return resp;
+    },
   };
 }

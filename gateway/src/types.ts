@@ -95,6 +95,13 @@ export interface Provider {
   matches(model: string): boolean;
   /** Forward a request and return a normalized response. */
   invoke(request: LlmRequest): Promise<LlmResponse>;
+  /**
+   * Open a streaming connection upstream and return the raw fetch Response.
+   * The gateway is responsible for piping the body to the client (with
+   * line-level output redaction). Optional — providers without streaming
+   * fall back to non-streaming `invoke()`.
+   */
+  invokeStream?(request: LlmRequest): Promise<Response>;
 }
 
 export interface AuditRecord {

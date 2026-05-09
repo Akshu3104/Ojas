@@ -255,6 +255,100 @@ describe("Gateway", () => {
     }
   });
 
+  it("blocks tools that are not on the approval list", async () => {
+    const capture = { lastRequest: null as LlmRequest | null };
+    const { url, close } = await startServer({
+      policies: [
+        (await import("../src/policies/toolApproval.js")).createToolApprovalPolicy({
+          mode: "enforce",
+          isToolApproved: (_tenant, name) => name === "approved_tool",
+        }),
+      ],
+      providers: [fakeOpenAIProvider(capture)],
+      apiKeys: new Map([["devp_test_aaa", "tenant-a"]]),
+    });
+    try {
+      const r = await postChat(
+        url,
+        {
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: "hi" }],
+          tools: [
+            { name: "approved_tool", input_schema: {} },
+            { name: "rogue_tool", input_schema: {} },
+          ],
+        },
+        "devp_test_aaa"
+      );
+      expect(r.status).toBe(403);
+      expect(capture.lastRequest).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
+  it("relays SSE chunks back to the client and redacts PII in stream events", async () => {
+    const provider: Provider = {
+      id: "openai",
+      matches: m => m.startsWith("gpt-"),
+      invoke: async () => {
+        throw new Error("should not be called for streaming request");
+      },
+      invokeStream: async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const enc = new TextEncoder();
+            controller.enqueue(
+              enc.encode(
+                `data: {"choices":[{"delta":{"content":"reach me at user@example.com"}}]}\n\n`
+              )
+            );
+            controller.enqueue(
+              enc.encode(
+                `data: {"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}\n\n`
+              )
+            );
+            controller.enqueue(enc.encode(`data: [DONE]\n\n`));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    };
+    const { url, close, audits } = await startServer({
+      policies: [],
+      providers: [provider],
+      apiKeys: new Map([["devp_test_aaa", "tenant-a"]]),
+    });
+    try {
+      const resp = await fetch(`${url}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer devp_test_aaa`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          stream: true,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      });
+      expect(resp.status).toBe(200);
+      const text = await resp.text();
+      expect(text).toContain("[REDACTED_EMAIL]");
+      expect(text).not.toContain("user@example.com");
+      expect(text).toContain("data: [DONE]");
+      // Audit captured the streaming usage.
+      await new Promise(r => setTimeout(r, 20));
+      expect(audits[0]?.usage?.total_tokens).toBe(14);
+    } finally {
+      await close();
+    }
+  });
+
   it("returns 404 when no provider matches the model", async () => {
     const { url, close } = await startServer({
       policies: [],
