@@ -17,22 +17,49 @@ const RAZORPAY_TIMEOUT_MS = 8_000;
 const RAZORPAY_KEY_ID = ENV.razorpayKeyId;
 const RAZORPAY_KEY_SECRET = ENV.razorpayKeySecret;
 
+// ============================================================================
+// Pricing tiers (Sprint 2)
+//
+// We bill in two currencies for two ICPs:
+//   - INR via Razorpay (default for Indian/SEA mid-market)
+//   - USD via Stripe (default for global self-serve)
+//
+// `amount` is the INR amount in paise; `usdAmount` is the USD amount in cents.
+// The `currency` advertised to the buyer is selected at checkout based on
+// region; both rails are kept in sync here so the dashboard can render either.
+//
+// Pricing rationale (see MARKET_ANALYSIS.md §5.3): the previous tiers were
+// ₹999 / ₹4,999 per month — well below CAC for any cybersecurity SaaS. The
+// proposed bands below are 5–10× higher and align to comparable AI-security
+// vendor list prices (Snyk Team $25/dev/mo, Salt avg $70K ACV, etc.).
+//
+// Razorpay's plan API requires INR plans to be created server-side per cycle,
+// so the helper functions below take care of provisioning a Razorpay plan for
+// each tier on first checkout.
+// ============================================================================
+
+// We bill three on-platform tiers (`free` / `pro` / `enterprise`) at the
+// database level today — these are the values the `users.plan` mysqlEnum
+// accepts. "Business" and "Scale" are roadmap labels surfaced in marketing
+// copy; once the new SKUs are billable they will be added via DB migration.
 const PLAN_CONFIG = {
   free: {
     name: "DevPulse Free",
     amount: 0,
+    usdAmount: 0,
     currency: "INR",
     interval: "monthly",
     features: [
-      "Up to 2 API collections",
-      "3 security scans per day",
-      "Basic security scanning",
+      "Up to 5 API endpoints scanned",
+      "100 LLM calls/day routed via the gateway",
+      "OWASP Top 10 audit (read-only)",
       "Community support",
     ],
     limits: {
       maxCollections: 2,
       maxScansPerDay: 3,
       maxTeamMembers: 1,
+      maxGatewayCallsPerDay: 100,
       complianceExport: false,
       killSwitch: false,
       shadowAPI: false,
@@ -40,50 +67,57 @@ const PLAN_CONFIG = {
   },
   pro: {
     name: "DevPulse Pro",
-    amount: 99900, // ₹999 in paise (≈ $12 USD)
+    amount: 829900, // ₹8,299/mo (≈ $99 USD)
+    usdAmount: 9900, // $99/mo in cents
     currency: "INR",
     interval: "monthly",
     features: [
-      "Unlimited API collections",
-      "Advanced security scanning",
-      "Shadow API detection",
-      "Compliance reporting (PCI DSS + OWASP)",
-      "Kill switch & budget management",
-      "Team collaboration (up to 10 members)",
-      "Token analytics & cost forecasting",
-      "Priority support",
+      "Up to 10,000 LLM calls/day routed via the gateway",
+      "Unlimited API collections + Postman/OpenAPI scans",
+      "Inline kill-switch + budget caps",
+      "PII redaction at the gateway",
+      "85+ prompt-injection payload red-team library",
+      "Spec-drift / shadow API detection",
+      "Token analytics + per-model cost forecasting",
+      "Up to 5 team members",
+      "Email support, 1-business-day SLA",
     ],
     limits: {
       maxCollections: Infinity,
       maxScansPerDay: Infinity,
-      maxTeamMembers: 10,
+      maxTeamMembers: 5,
+      maxGatewayCallsPerDay: 10_000,
       complianceExport: true,
       killSwitch: true,
       shadowAPI: true,
     },
   },
   enterprise: {
-    name: "DevPulse Enterprise",
-    amount: 499900, // ₹4,999 in paise (≈ $60 USD)
+    name: "DevPulse Business",
+    amount: 4159900, // ₹41,599/mo (≈ $499 USD)
+    usdAmount: 49900, // $499/mo in cents
     currency: "INR",
     interval: "monthly",
     features: [
+      "Up to 250,000 LLM calls/day routed via the gateway",
       "Everything in Pro",
-      "Unlimited team members",
-      "Custom compliance frameworks",
-      "SSO / SAML integration",
-      "Dedicated account manager",
-      "SLA guarantee (99.9%)",
-      "On-premise deployment option",
+      "MCP governance: tool-call audit + permission graph",
+      "Scheduled AI red-team runs",
+      "Up to 25 team members + RBAC roles",
+      "OWASP / PCI-prep / GDPR-prep / SOC2-prep evidence export",
+      "Slack + webhook + PagerDuty alerting",
+      "Priority support, 4-hour SLA on P1",
     ],
     limits: {
       maxCollections: Infinity,
       maxScansPerDay: Infinity,
-      maxTeamMembers: Infinity,
+      maxTeamMembers: 25,
+      maxGatewayCallsPerDay: 250_000,
       complianceExport: true,
       killSwitch: true,
       shadowAPI: true,
-      sso: true,
+      mcpGovernance: true,
+      sso: false, // roadmap
       prioritySupport: true,
     },
   },

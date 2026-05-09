@@ -1,22 +1,37 @@
-# DevPulse — AI Runtime Governance Platform
+# DevPulse — AI Security & Cost Guardrails (Sprint 2)
 
-**DevPulse** is the runtime governance, security and observability layer for production AI agents and LLM-backed APIs. It gives security and platform teams a single control plane to **secure**, **monitor**, and **kill-switch** AI workloads — across cost, prompts, tools, and the underlying APIs they reach.
+> **Honest status, May 2026.** This repo is in active development toward a real
+> *AI runtime governance* product. Phase 1 (auth, OWASP API scanning,
+> observability, cost dashboard, audit log) is shipped and production-hardened.
+> Phase 2 (this sprint) introduces an **inline LLM gateway** that turns the
+> kill-switch and prompt-injection blocking from dashboard features into
+> **enforcing controls in the request path**. See `SHIPPED.md` for what is
+> real today vs. roadmap.
+>
+> The product positioning is being narrowed (see `MARKET_ANALYSIS.md`) and a
+> rebrand is pending — the codebase still uses the `DevPulse` name.
 
 [![CI/CD Pipeline](https://github.com/yourname/devpulse/actions/workflows/deploy.yml/badge.svg)](https://github.com/yourname/devpulse/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## What DevPulse does
+## What DevPulse does today
 
-| Pillar | Capabilities |
-| --- | --- |
-| **AI Runtime Governance** | Live token-cost telemetry, kill-switch with budget caps, weekly digest, per-model cost breakdown |
-| **API Security** | OWASP Top 10 + Postman / OpenAPI scanning, shadow-API discovery, severity scoring, fix recommendations |
-| **Observability** | Prometheus metrics, Sentry error monitoring with PII scrubbing, structured pino logs, audit log per user |
-| **Compliance** | PCI DSS, GDPR & SOC2-ready audit trail, exportable compliance reports per collection |
-| **Team & Access** | RBAC, team invitations, multi-session management, refresh-token rotation, brute-force lockout |
-| **DX & Integrations** | tRPC + WebSocket SDK, VS Code extension, GitHub push/PR webhooks, Slack alerts, Razorpay & Stripe billing |
+| Pillar | Capabilities | Status |
+| --- | --- | --- |
+| **Inline LLM Gateway** (Sprint 2) | OpenAI-compatible proxy, token metering, kill-switch enforcement, PII redaction, prompt-injection blocking | **MVP** |
+| **AI Cost Visibility** | Per-model token analytics, weekly digest, anomaly alerts, budget caps | Production |
+| **API Security Audits** | OWASP Top 10 scanning of Postman / OpenAPI collections, severity scoring, audit-grade PDF export | Production |
+| **Spec-drift / shadow-API discovery** | Diff between declared and observed endpoints | Production |
+| **AI Red-Team Library** | 85+ curated prompt-injection / jailbreak payloads across 10 OWASP LLM01 categories | Static |
+| **MCP Governance** (Sprint 2) | Tool-call audit log, permission graph data model | Scaffolded |
+| **Observability** | Prometheus metrics, Sentry with PII scrubbing, structured pino logs, audit log per user | Production |
+| **Compliance evidence** | Audit-trail export, OWASP / PCI-DSS-prep / GDPR-prep / SOC2-prep report templates *(reports help you prepare; they do not certify you)* | Production |
+| **Team & Access** | RBAC, team invitations, multi-session management, refresh-token rotation, brute-force lockout | Production |
+| **Integrations** | tRPC + WebSocket SDK, VS Code extension (findings tree), GitHub push/PR webhooks, Slack alerts, Razorpay (INR) + Stripe (USD) billing | Production / scaffolded |
 
-> **Phase 1 ships today.** Phase 2 (AI runtime telemetry, MCP security governance, Security Copilot, multi-tenancy, SOC2 reports) is sequenced in `PRODUCT_ROADMAP.md`.
+See `SHIPPED.md` for the precise per-feature status and `PRODUCT_ROADMAP.md`
+for what is sequenced next (continuous AI red-team scheduler, full MCP
+enforcement, AI-BOM, SSO/SAML, SOC2 Type 1).
 
 ## Quick Start
 
@@ -141,13 +156,24 @@ Environment variables:
 - `SECRET_KEY` - JWT signing secret
 - `GITHUB_WEBHOOK_SECRET` - GitHub webhook verification secret
 
-## Security & Compliance
+## Security & Compliance — what is true
 
-DevPulse is designed with privacy-by-design principles:
+DevPulse is designed with privacy-by-design principles, but please read these
+claims carefully — they are deliberately precise:
 
-- **PII Redaction** - Automatically scrubs sensitive data before LLM transmission
-- **Audit Logs** - All API interactions are logged for SOC2 compliance
-- **Data Residency** - Self-hostable option for on-premise deployments
+- **PII Redaction at the gateway** — `gateway/` proxies LLM traffic and
+  applies regex + entity redaction before forwarding to the upstream model.
+  PII never lands in DevPulse's logs.
+- **Audit logs** — every state-changing action is logged with actor + IP +
+  timestamp + resource. The export format is suitable as **evidence** during
+  a SOC2 audit; it does **not** make you SOC2-certified.
+- **PCI DSS / GDPR / DPDP Act / SOC2-prep reports** — DevPulse generates
+  reports that help you prepare for these audits. DevPulse itself is not
+  certified against any of these frameworks at this time.
+- **Data residency** — self-hostable option (Docker Compose) for on-premise
+  deployments. Single-tenant SaaS is roadmap.
+
+If you need a certified vendor, this is not it yet.
 
 ## License
 
