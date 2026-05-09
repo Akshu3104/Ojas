@@ -24,6 +24,7 @@ import {
 } from "./types.js";
 import { createKillSwitchPolicy } from "./policies/killSwitch.js";
 import { createPromptInjectionPolicy } from "./policies/promptInjection.js";
+import { createFuzzyInjectionPolicy } from "./policies/fuzzyInjection.js";
 import { createPiiRedactionPolicy } from "./policies/piiRedaction.js";
 import { createTokenBudgetPolicy } from "./policies/tokenBudget.js";
 import { createToolApprovalPolicy } from "./policies/toolApproval.js";
@@ -528,6 +529,18 @@ if (isMain) {
         logger.warn(
           { payloadId: payload.id, severity: payload.severity },
           "[Policy] prompt-injection match"
+        ),
+    }),
+    createFuzzyInjectionPolicy({
+      enabled: env.DEVPULSE_GATEWAY_BLOCK_INJECTIONS,
+      onMatch: m =>
+        logger.warn(
+          {
+            payloadId: m.payload.id,
+            severity: m.payload.severity,
+            similarity: m.similarity,
+          },
+          "[Policy] prompt-injection fuzzy match"
         ),
     }),
     createPiiRedactionPolicy({
