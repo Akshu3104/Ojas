@@ -11,6 +11,8 @@ import {
 import { getPlanLimits } from "../payments";
 import { collectionLimitError } from "../utils/planLimits";
 import { toNumber } from "../utils/decimal";
+import { scanCollectionForCredentials } from "../services/collectionCredentialScan";
+import { logger } from "../_core/logger";
 
 export const collectionsRouter = router({
   create: editorProcedure
@@ -47,6 +49,11 @@ export const collectionsRouter = router({
         }
       }
 
+      // Patent surface NHCE/DEV/2026/001 component: every imported collection
+      // is run through the credential scanner before persistence so leaked
+      // keys are surfaced at import time rather than 30,000 collections later.
+      const credentialFindings = scanCollectionForCredentials(input.data);
+
       const collection = await db.createCollection(
         ctx.user.id,
         input.name,
@@ -54,8 +61,31 @@ export const collectionsRouter = router({
         input.data,
         input.description
       );
+      if (credentialFindings.length > 0) {
+        logger.warn(
+          {
+            userId: ctx.user.id,
+            collectionId: collection.id,
+            count: credentialFindings.length,
+            ruleIds: Array.from(
+              new Set(credentialFindings.map(f => f.ruleId))
+            ),
+          },
+          "[Collections] credential scanner detected potential leaks at import"
+        );
+      }
       await invalidateUserCache(ctx.user.id);
-      return collection;
+      return {
+        ...collection,
+        credentialFindings: credentialFindings.map(f => ({
+          ruleId: f.ruleId,
+          description: f.description,
+          severity: f.severity,
+          path: f.path,
+          matchPreview: f.matchPreview,
+          line: f.line,
+        })),
+      };
     }),
 
   list: protectedProcedure
