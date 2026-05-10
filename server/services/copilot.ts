@@ -28,6 +28,14 @@ import {
   listRedteamRuns,
   listShadowAiEvents,
 } from "../db";
+import {
+  computeShadowDrift,
+  computeWowRegressions,
+  detectFollowUp,
+  parseDateRange,
+  type DateRange,
+  type ExtendedIntentName,
+} from "./copilotIntents";
 
 export type IntentName =
   | "blocked_attempts_today"
@@ -36,7 +44,8 @@ export type IntentName =
   | "redteam_score_trend"
   | "open_autofixes"
   | "help"
-  | "fallback";
+  | "fallback"
+  | ExtendedIntentName;
 
 interface IntentMatch {
   intent: IntentName;
@@ -47,6 +56,18 @@ const INTENT_RULES: Array<{
   intent: IntentName;
   match: RegExp;
 }> = [
+  // Newer / more specific rules first so e.g. "drift" matches shadow_drift
+  // before falling through to the older shadow_hosts_recent rule.
+  {
+    intent: "wow_regressions",
+    match:
+      /(week[- ]over[- ]week|w(?:o|\/)w|regression|got worse|degraded|deteriorat).*?(cost|spend|score|block|attempt|red[- ]?team)?/i,
+  },
+  {
+    intent: "shadow_drift",
+    match:
+      /\b(?:shadow|rogue|unsanctioned).*?(?:drift|new|change|appeared|disappeared|gone)\b/i,
+  },
   {
     intent: "blocked_attempts_today",
     match: /(blocked|injection|attempt).*(today|24|day)/i,
@@ -70,6 +91,15 @@ const INTENT_RULES: Array<{
 export function classifyQuery(query: string): IntentMatch {
   const trimmed = query.trim();
   if (trimmed.length === 0) return { intent: "help" };
+
+  // Custom-date-range intent: trigger when an explicit range phrase is
+  // detected AND the query is asking about traffic / blocks / cost over
+  // that window (i.e. not a different intent already).
+  const range = parseDateRange(trimmed);
+  if (range) {
+    return { intent: "custom_date_range", args: { range } };
+  }
+
   for (const rule of INTENT_RULES) {
     if (rule.match.test(trimmed)) return { intent: rule.intent };
   }
@@ -87,7 +117,8 @@ export async function answerForTenant(
   userId: number,
   query: string
 ): Promise<CopilotAnswer> {
-  const { intent } = classifyQuery(query);
+  const match = classifyQuery(query);
+  const { intent } = match;
   switch (intent) {
     case "blocked_attempts_today": {
       const audit = await getGatewayAuditRecent(userId, 1000);
@@ -174,6 +205,120 @@ export async function answerForTenant(
           .map(r => ({ kind: "redteam_run", id: r.id, label: `Run ${r.id.slice(0, 8)}` })),
       };
     }
+    case "wow_regressions": {
+      const audit = await getGatewayAuditRecent(userId, 5000);
+      const runs = await listRedteamRuns(userId, 100);
+      const signals = computeWowRegressions(audit, runs);
+      const regressions = signals.filter(s => s.isRegression);
+      const lines = signals.map(s => {
+        const arrow = s.isRegression ? "↑" : "→";
+        const pct =
+          s.pctChange === null
+            ? "n/a"
+            : `${s.pctChange >= 0 ? "+" : ""}${s.pctChange.toFixed(1)}%`;
+        const unit = s.signal === "cost_usd" ? "$" : "";
+        return `- ${s.signal.replace(/_/g, " ")} ${arrow} ${unit}${s.thisWeek} vs ${unit}${s.priorWeek} (${pct})`;
+      });
+      return {
+        intent,
+        text:
+          regressions.length === 0
+            ? `Week over week: nothing looks regressed.\n${lines.join("\n")}`
+            : `${regressions.length} signal(s) regressed week over week:\n${lines.join("\n")}`,
+        data: signals,
+        references: [
+          { kind: "_intent", label: intent },
+          { kind: "page", label: "Cost dashboard" },
+          { kind: "page", label: "Red-team history" },
+        ],
+      };
+    }
+    case "shadow_drift": {
+      const events = await listShadowAiEvents(userId, 2000);
+      const drift = computeShadowDrift(events);
+      const newList = drift.newHosts
+        .slice(0, 10)
+        .map(h => `${h.host} (${h.calls} call${h.calls === 1 ? "" : "s"})`);
+      const vanishedList = drift.vanishedHosts
+        .slice(0, 10)
+        .map(h => h.host);
+      const newSummary =
+        drift.newHosts.length === 0
+          ? "No new shadow hosts in the last 7 days."
+          : `${drift.newHosts.length} new shadow host(s): ${newList.join(", ")}.`;
+      const vanishedSummary =
+        drift.vanishedHosts.length === 0
+          ? ""
+          : ` ${drift.vanishedHosts.length} host(s) vanished: ${vanishedList.join(", ")}.`;
+      return {
+        intent,
+        text: `${newSummary}${vanishedSummary}`,
+        data: drift,
+        references: [
+          { kind: "_intent", label: intent },
+          { kind: "page", label: "Shadow AI" },
+        ],
+      };
+    }
+    case "custom_date_range": {
+      const range =
+        typeof match.args?.range === "object" && match.args?.range !== null
+          ? (match.args.range as DateRange)
+          : null;
+      if (!range) {
+        return {
+          intent,
+          text:
+            "I detected a date-range intent but couldn't parse the window. Try `last 30 days` or `between 2026-04-01 and 2026-04-15`.",
+          references: [{ kind: "_intent", label: intent }],
+        };
+      }
+      const audit = await getGatewayAuditRecent(userId, 5000);
+      const inRange = audit.filter(
+        r =>
+          r.createdAt.getTime() >= range.start.getTime() &&
+          r.createdAt.getTime() <= range.end.getTime()
+      );
+      const blocked = inRange.filter(r => r.decision === "blocked").length;
+      const allowed = inRange.filter(r => r.decision === "allowed").length;
+      const cost = inRange.reduce(
+        (sum, r) => sum + Number(r.estimatedCostUsd) || 0,
+        0
+      );
+      return {
+        intent,
+        text:
+          inRange.length === 0
+            ? `No gateway traffic for ${range.label}.`
+            : `${range.label}: ${allowed} allowed, ${blocked} blocked, $${cost.toFixed(2)} estimated cost across ${inRange.length} call(s).`,
+        data: {
+          range: {
+            start: range.start.toISOString(),
+            end: range.end.toISOString(),
+            label: range.label,
+          },
+          allowed,
+          blocked,
+          cost: Math.round(cost * 100) / 100,
+          calls: inRange.length,
+        },
+        references: [
+          { kind: "_intent", label: intent },
+          { kind: "page", label: "Runtime audit log" },
+        ],
+      };
+    }
+    case "follow_up": {
+      // follow_up reaches answerForTenant only if the caller couldn't
+      // resolve the prior intent. Surface a graceful "what would you like
+      // me to redo?" so the user can disambiguate.
+      return {
+        intent,
+        text:
+          "I caught a follow-up but I'm not sure which earlier question you mean. Try asking the question with the new window directly, e.g. \"what about last 30 days?\" with the metric named.",
+        references: [{ kind: "_intent", label: intent }],
+      };
+    }
     case "open_autofixes": {
       const fixes = await listAutofix(userId, "open");
       return {
@@ -248,18 +393,40 @@ export async function sendCopilotMessage(
     role: "user",
     content: query,
   });
-  const answer = await answerForTenant(userId, query);
+
+  // Resolve follow-ups by re-running the prior assistant turn's intent
+  // when the user says "and what about last 30 days?", "same for last
+  // week", etc. The prior intent is stored as a sentinel reference
+  // entry on the previous assistant message ({kind: "_intent", label: <intent>}).
+  let answer: CopilotAnswer;
+  const priorMessages = await listCopilotMessages(conversationId);
+  const followUp = detectFollowUp(query, priorMessages);
+  if (followUp.isFollowUp && followUp.priorIntent) {
+    // Re-run the prior intent with the new query (so e.g. a date-range
+    // re-parse picks up "last 30 days" inside the follow-up).
+    const synthetic = `${query} ${followUp.priorIntent.replace(/_/g, " ")}`;
+    answer = await answerForTenant(userId, synthetic);
+  } else {
+    answer = await answerForTenant(userId, query);
+  }
+
+  // Persist the resolved intent so the *next* turn can detect a chain
+  // of follow-ups.
+  const refsWithIntent = answer.references.some(r => r.kind === "_intent")
+    ? answer.references
+    : [...answer.references, { kind: "_intent", label: answer.intent }];
+
   await appendCopilotMessage({
     conversationId,
     role: "assistant",
     content: answer.text,
-    references: answer.references,
+    references: refsWithIntent,
   });
   logger.info(
-    { userId, conversationId, intent: answer.intent },
+    { userId, conversationId, intent: answer.intent, followUp: followUp.isFollowUp },
     "[Copilot] answered query"
   );
-  return answer;
+  return { ...answer, references: refsWithIntent };
 }
 
 export async function getConversation(conversationId: string) {
