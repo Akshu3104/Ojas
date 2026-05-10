@@ -34,6 +34,7 @@ import { riskScoreRouter } from "./api/riskScore";
 import { socTwoRouter } from "./api/socTwo";
 import { policiesRouter } from "./api/policies";
 import { alertsRouter } from "./api/alerts";
+import { dataExportRouter } from "./api/dataExport";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -331,6 +332,7 @@ export const appRouter = router({
   socTwo: socTwoRouter,
   policies: policiesRouter,
   alerts: alertsRouter,
+  dataExport: dataExportRouter,
 });
 
 export type AppRouter = typeof appRouter;
