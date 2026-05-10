@@ -6,8 +6,7 @@
 
 import crypto from "crypto";
 import * as db from "./db";
-import { runCollectionScan } from "./services/scanService";
-import { sendSlackScanAlert } from "./slack";
+import { enqueueScan } from "./services/jobs";
 import { logger } from "./_core/logger";
 import {
   scanPullRequestFiles,
@@ -118,16 +117,20 @@ export async function handleGitHubPush(payload: GitHubWebhookPayload): Promise<{
         `[GitHub] Triggering scan for collection ${collection.id} (${collection.name})`
       );
 
-      await runCollectionScan(collection.userId, collection.id, {
-        scanType: "full",
-        triggeredBy: "github_push",
-        branch,
-        commitSha,
+      await enqueueScan({
+        userId: collection.userId,
+        collectionId: collection.id,
+        options: {
+          scanType: "full",
+          triggeredBy: "github_push",
+          branch,
+          commitSha,
+        },
       });
 
       scansTriggered++;
     } catch (error) {
-      logger.error({ err: error }, `[GitHub] Failed to trigger scan for collection ${collection.id}`);
+      logger.error({ err: error }, `[GitHub] Failed to enqueue scan for collection ${collection.id}`);
     }
   }
 
@@ -199,17 +202,21 @@ export async function handleGitHubPullRequest(
         `[GitHub] Triggering PR scan for collection ${collection.id} (${collection.name})`
       );
 
-      await runCollectionScan(collection.userId, collection.id, {
-        scanType: "quick", // Quick scan for PRs
-        triggeredBy: "github_pr",
-        prNumber: pr.number,
-        branch: pr.head.ref,
-        commitSha: pr.head.sha,
+      await enqueueScan({
+        userId: collection.userId,
+        collectionId: collection.id,
+        options: {
+          scanType: "quick", // Quick scan for PRs
+          triggeredBy: "github_pr",
+          prNumber: pr.number,
+          branch: pr.head.ref,
+          commitSha: pr.head.sha,
+        },
       });
 
       scansTriggered++;
     } catch (error) {
-      logger.error({ err: error }, `[GitHub] Failed to trigger PR scan for collection ${collection.id}`);
+      logger.error({ err: error }, `[GitHub] Failed to enqueue PR scan for collection ${collection.id}`);
     }
   }
 

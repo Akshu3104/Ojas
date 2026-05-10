@@ -30,6 +30,7 @@ import {
 } from "../github";
 import { scheduleWeeklyDigest } from "../jobs/weeklyDigest";
 import { startRedTeamScheduler } from "../services/redTeamScheduler";
+import { registerJobWorkers } from "../services/jobs";
 import { verifyWebhookSignature } from "../utils/security";
 
 // ============================================================================
@@ -1045,6 +1046,7 @@ async function startServer() {
       );
     }
 
+    registerJobWorkers();
     scheduleWeeklyDigest();
     if (process.env.DEVPULSE_REDTEAM_SCHEDULER !== "disabled") {
       startRedTeamScheduler(60_000);

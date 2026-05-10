@@ -1,63 +1,38 @@
 import cron from "node-cron";
 import * as db from "../db";
-import { sendWeeklyDigestEmail } from "../email";
 import { logger } from "../_core/logger";
+import { enqueueWeeklyDigest } from "../services/jobs";
 
+/**
+ * Fan out one digest job per user via the job queue. Per-user processing
+ * (DB reads + SMTP send) happens concurrently inside the queue worker
+ * pool so a slow SMTP server can no longer freeze the whole digest run.
+ */
 export async function runWeeklyDigest(): Promise<void> {
-  logger.info("[WeeklyDigest] Starting weekly digest job...");
+  logger.info("[WeeklyDigest] Starting weekly digest fan-out...");
 
   try {
     const users = await db.getAllUsers();
-    logger.info(`[WeeklyDigest] Processing ${users.length} users`);
+    logger.info(
+      `[WeeklyDigest] Enqueueing digest jobs for ${users.length} users`
+    );
 
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
+    let enqueued = 0;
     for (const user of users) {
       if (!user.email) continue;
-
-      const userId = user.id;
-
-      const scans = await db.getRecentScans(userId, 7);
-      const recentScans = scans.filter(
-        s => new Date(s.createdAt) >= oneWeekAgo
-      );
-
-      let totalFindings = 0;
-      let criticalFindings = 0;
-
-      for (const scan of recentScans) {
-        const findings = await db.getFindingsByScanId(scan.id);
-        totalFindings += findings.length;
-        criticalFindings += findings.filter(
-          f => f.severity === "Critical"
-        ).length;
+      try {
+        await enqueueWeeklyDigest({ userId: user.id });
+        enqueued += 1;
+      } catch (err) {
+        logger.error(
+          { err, userId: user.id },
+          "[WeeklyDigest] Failed to enqueue digest job"
+        );
       }
-
-      const weeklyScans = recentScans.length;
-      const newFindings = totalFindings;
-      const costTotal = 0;
-
-      const collections = await db.getCollectionsByUserId(userId);
-      const topCollection = collections[0]?.name || "N/A";
-
-      const appUrl = process.env.APP_URL || "https://devpluse.in";
-
-      await sendWeeklyDigestEmail({
-        toEmail: user.email,
-        userName: user.name || "",
-        weeklyScans,
-        newFindings,
-        criticalFindings,
-        totalCost: costTotal,
-        topCollection,
-        dashboardUrl: `${appUrl}/dashboard`,
-      }).catch(err =>
-        logger.error({ err: err }, `[WeeklyDigest] Failed to send to ${user.email}`)
-      );
     }
-
-    logger.info("[WeeklyDigest] Weekly digest job completed");
+    logger.info(
+      `[WeeklyDigest] Fan-out complete: ${enqueued} jobs enqueued`
+    );
   } catch (error) {
     logger.error({ err: error }, "[WeeklyDigest] Error running weekly digest");
   }
