@@ -1,8 +1,10 @@
 # Market Readiness — Honest Assessment
 
-> Last updated: 2026-05-08 (Sprint 4 — Master Report cross-check + gap closure).
+> Last updated: 2026-05-08 (Sprint 5 — deferred-sprint completion).
 > Branch: `devin/1778322844-sprint3-build-everything`
-> Test status: **284/284 server-side tests passing**, **55/55 gateway tests passing**, 9/9 Python SDK tests passing, `pnpm check` ✓, `pnpm build` ✓.
+> Test status: **324/324 server-side tests passing**, **55/55 gateway tests passing**, 9/9 Python SDK tests passing, 14/14 VS Code shadow-API scanner tests, `pnpm check` ✓, `pnpm build` ✓.
+>
+> **Sprint 5 added 40 more server tests** covering: BullMQ typed-queue dispatch (6), Security Copilot extended intents (20), SOC2 evidence-pack builder (14).
 >
 > **Sprint 4 added 43 new server tests + 12 new gateway tests** covering: unified risk score (14), encrypted vault (9), collection credential scan (6), shadow API scanner (14), thinking-token attribution (5 OpenAI + 1 Anthropic), autonomous kill-switch loop (2), TS plumbing.
 
@@ -12,7 +14,13 @@ This document is the unvarnished, no-flattery answer to "is it built and market 
 
 ## TL;DR
 
-**Overall product market-readiness: ~78%** (was 62% pre-Sprint-4).
+**Overall product market-readiness: ~85%** (was 78% post-Sprint-4, was 62% pre-Sprint-4).
+
+**Sprint 5 closed the four engineering items deferred at the end of Sprint 4:**
+1. **BullMQ consumer migration** — every scan / webhook-delivery / weekly-digest worker now flows through the `JobQueue` abstraction (memory backend by default; Redis-backed when `REDIS_URL` is set). GitHub push/PR webhooks enqueue scans instead of awaiting inline; weekly digest fan-outs N user-jobs the queue processes concurrently. New typed wrappers in `server/services/jobs.ts` (`enqueueScan`, `enqueueWebhookDelivery`, `enqueueWeeklyDigest`). 6 tests.
+2. **Security Copilot — 4 deferred intents.** New `server/services/copilotIntents.ts` adds: `wow_regressions` (week-over-week cost / blocked / red-team-score deltas, sorted regressions-first), `shadow_drift` (new vs vanished shadow-LLM hosts in a sliding window), `custom_date_range` (parses "today", "yesterday", "last N days", "last week", "last month", "between YYYY-MM-DD and YYYY-MM-DD"), and `follow_up` (pronoun-resolution that re-runs the prior intent's helper on a new query). 20 unit tests.
+3. **Per-page skeleton loaders + red-team chart.** New `client/src/components/PageSkeletons.tsx` with shape-matching placeholders for Dashboard, Compliance, TokenAnalytics, RedTeam, KillSwitch. New `client/src/pages/RedTeam.tsx` adds the red-team dashboard with a Recharts security-score sparkline over completed runs, 3-stat grid, and run-history table. Wired into App.tsx routing + DashboardLayout sidebar.
+4. **SOC2 evidence-collection scaffolding.** New `server/services/socTwoEvidence.ts` builds an 11-control evidence pack (CC1.4 / CC2.2 / CC4.1 / CC5.1 / CC6.1 / CC6.6 / CC7.2 / CC7.3 / CC9.2 / A1.2 / C1.1) over a custom or default 90-day window. Output is deterministic JSON, signable, diffable across periods, consumable by Vanta / Drata import APIs. New `server/api/socTwo.ts` exposes 3 endpoints: `controls`, `evidencePack`, `auditLogExport`. 14 unit tests.
 
 Translation: the *core engine* (inline LLM gateway with policy chain, SDKs, audit trail, governance scaffolding) is genuinely production-grade. Sprint 4 closed the four "Master Report 2026" patent surfaces that were genuinely missing engineering work, leaving only paperwork (GitHub App registration, VS Code marketplace publish, PyPI publish, SOC2 certification, brand-domain purchase) between the current state and Tier-2 paid pilot.
 
@@ -345,16 +353,27 @@ Done in Sprint 2. No overclaims, real prices, SHIPPED.md tracks real vs. roadmap
 
 **Hard-blocked on external constraints, not engineering:**
 20. Rebrand (0% — needs name + domain from you)
-21. SOC2 Type 1 (0% — calendar process, 3-6 months)
+21. SOC2 Type 1 (0% — calendar process, 3-6 months; evidence-pack builder is built, ready to feed Vanta/Drata)
+
+---
+
+## Sprint 5 deltas vs prior estimates
+
+| Item | Sprint 4 % | Sprint 5 % | Notes |
+|---|---|---|---|
+| Job queue (BullMQ) | 70% | **90%** | Consumers migrated. Worker registration idempotent. Per-queue concurrency configured. |
+| Security Copilot | 65% | **80%** | 6 → 10 intents. Follow-up resolution adds conversation context preservation. |
+| Frontend resilience | 75% | **85%** | Per-page skeletons land. Red-team page now has a real visualization. |
+| SOC2 readiness | 0% (paperwork only) | **35%** | Engineering side complete: 11 controls evaluated programmatically against owned telemetry; pack consumable by Vanta/Drata. Calendar process still 3-6 months. |
 
 ---
 
 ## Realistic next steps
 
-1. **You provide:** a brand name + buy `.com`, GitHub App registration, VS Code Marketplace publisher, PyPI publisher, Stripe live keys.
-2. **I (or any engineer) execute:** the rebrand patch (~2hr), GitHub App integration code (~1d), MCP transport client (~1wk), Bedrock provider (~1d), Aadhaar/PAN PII patterns (~2hr), per-page skeletons (~1d).
-3. **At that point**, overall readiness moves from 62% → ~88%.
-4. **The remaining 12%** is SOC2 Type 1 + Marketplace approval calendar processes. Those are paperwork, not engineering.
+1. **You provide:** a brand name + buy `.com`, GitHub App registration, VS Code Marketplace publisher, PyPI publisher, Stripe live keys, Vanta/Drata account.
+2. **I (or any engineer) execute:** the rebrand patch (~2hr), GitHub App integration code (~1d), MCP transport client (~1wk), Bedrock provider w/ real account (~1d), JetBrains plugin (~1wk).
+3. **At that point**, overall readiness moves from 85% → ~94%.
+4. **The remaining 6%** is SOC2 Type 1 + Marketplace approval calendar processes. Those are paperwork, not engineering.
 
 ## Honest closing
 
