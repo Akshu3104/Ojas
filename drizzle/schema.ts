@@ -1097,3 +1097,69 @@ export const tenantPolicies = mysqlTable(
 );
 export type TenantPolicyRow = typeof tenantPolicies.$inferSelect;
 export type InsertTenantPolicyRow = typeof tenantPolicies.$inferInsert;
+
+/**
+ * User-defined alert rules (Sprint 6).
+ * `conditions` is the JSON-encoded condition list and `channels` carries
+ * the integration credentials (Discord webhook / PagerDuty routing key /
+ * webhook endpoint refs). PagerDuty routing keys SHOULD be encrypted at
+ * rest when used in production — the gateway accepts both raw and
+ * vault-fingerprinted forms so existing deployments aren't broken.
+ */
+export const alertRules = mysqlTable(
+  "alert_rules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 192 }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    conditions: json("conditions").notNull(),
+    window: mysqlEnum("window", ["1h", "24h", "7d"]).notNull().default("24h"),
+    cooldownMinutes: int("cooldownMinutes").notNull().default(30),
+    severity: mysqlEnum("severity", ["low", "medium", "high", "critical"])
+      .notNull()
+      .default("medium"),
+    channels: json("channels").notNull(),
+    lastFiredAt: timestamp("lastFiredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    enabledIdx: index("enabled_idx").on(table.enabled),
+  })
+);
+export type AlertRuleRow = typeof alertRules.$inferSelect;
+export type InsertAlertRuleRow = typeof alertRules.$inferInsert;
+
+/**
+ * Append-only event log of fired alerts. One row per dispatch attempt
+ * (success or failure). Used to debug "why didn't this fire?" cases and
+ * to populate the dashboard's alert-history table.
+ */
+export const alertEvents = mysqlTable(
+  "alert_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    ruleId: int("ruleId").notNull(),
+    severity: mysqlEnum("severity", ["low", "medium", "high", "critical"])
+      .notNull(),
+    summary: varchar("summary", { length: 512 }).notNull(),
+    matched: json("matched").notNull(),
+    snapshots: json("snapshots").notNull(),
+    /** "discord" | "pagerduty" | "webhook" */
+    channel: varchar("channel", { length: 32 }).notNull(),
+    delivered: boolean("delivered").notNull().default(false),
+    statusCode: int("statusCode"),
+    errorMessage: varchar("errorMessage", { length: 512 }),
+    firedAt: timestamp("firedAt").defaultNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    ruleIdIdx: index("ruleId_idx").on(table.ruleId),
+    firedAtIdx: index("firedAt_idx").on(table.firedAt),
+  })
+);
+export type AlertEventRow = typeof alertEvents.$inferSelect;
+export type InsertAlertEventRow = typeof alertEvents.$inferInsert;

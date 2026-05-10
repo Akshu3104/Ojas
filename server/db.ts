@@ -35,8 +35,14 @@ import {
   copilotConversations,
   copilotMessages,
   tenantPolicies,
+  alertRules,
+  alertEvents,
   type TenantPolicyRow,
   type InsertTenantPolicyRow,
+  type AlertRuleRow,
+  type InsertAlertRuleRow,
+  type AlertEventRow,
+  type InsertAlertEventRow,
   type WebhookEndpoint,
   type InsertWebhookEndpoint,
   type InsertWebhookDelivery,
@@ -2918,4 +2924,98 @@ export async function deleteTenantPolicy(
   await db
     .delete(tenantPolicies)
     .where(and(eq(tenantPolicies.userId, userId), eq(tenantPolicies.id, id)));
+}
+
+// ── Alert rules + events (Sprint 6) ──────────────────────────────────────────
+
+export async function createAlertRule(
+  row: InsertAlertRuleRow
+): Promise<number> {
+  const db = await getDb();
+  assertDb(db);
+  const result = await db.insert(alertRules).values(row);
+  return Number((result as unknown as { insertId?: number }).insertId ?? 0);
+}
+
+export async function listAlertRules(
+  userId: number
+): Promise<AlertRuleRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(alertRules)
+    .where(eq(alertRules.userId, userId))
+    .orderBy(desc(alertRules.updatedAt));
+}
+
+export async function listEnabledAlertRules(
+  userId: number
+): Promise<AlertRuleRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(alertRules)
+    .where(and(eq(alertRules.userId, userId), eq(alertRules.enabled, true)));
+}
+
+export async function getAlertRule(
+  userId: number,
+  id: number
+): Promise<AlertRuleRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(alertRules)
+    .where(and(eq(alertRules.userId, userId), eq(alertRules.id, id)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateAlertRule(
+  userId: number,
+  id: number,
+  patch: Partial<AlertRuleRow>
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .update(alertRules)
+    .set(patch)
+    .where(and(eq(alertRules.userId, userId), eq(alertRules.id, id)));
+}
+
+export async function deleteAlertRule(
+  userId: number,
+  id: number
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .delete(alertRules)
+    .where(and(eq(alertRules.userId, userId), eq(alertRules.id, id)));
+}
+
+export async function recordAlertEvent(
+  row: InsertAlertEventRow
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db.insert(alertEvents).values(row);
+}
+
+export async function listAlertEvents(
+  userId: number,
+  limit = 100
+): Promise<AlertEventRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(alertEvents)
+    .where(eq(alertEvents.userId, userId))
+    .orderBy(desc(alertEvents.firedAt))
+    .limit(Math.min(limit, 500));
 }
