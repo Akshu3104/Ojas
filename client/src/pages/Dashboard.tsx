@@ -31,7 +31,7 @@ export default function Dashboard() {
       {/* Welcome Section */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold text-foreground">
-          Welcome to DevPulse
+          Welcome to Ojas
         </h1>
         <p className="text-muted-foreground">
           Your API security and LLM cost intelligence platform

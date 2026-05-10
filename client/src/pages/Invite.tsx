@@ -107,7 +107,7 @@ export default function Invite() {
           </div>
           <h1 className="text-2xl font-bold mb-2">You're Invited!</h1>
           <p className="text-muted-foreground">
-            Join <strong>{invitation.workspaceName}</strong> on DevPulse
+            Join <strong>{invitation.workspaceName}</strong> on Ojas
           </p>
         </div>
 

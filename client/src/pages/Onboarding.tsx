@@ -102,7 +102,7 @@ export default function Onboarding() {
       } else {
         // All steps completed
         await completeMutation.mutateAsync();
-        toast.success("Onboarding completed! Welcome to DevPulse!");
+        toast.success("Onboarding completed! Welcome to Ojas!");
         navigate("/dashboard");
       }
     } catch (error) {
@@ -128,7 +128,7 @@ export default function Onboarding() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold text-foreground">
-            Welcome to DevPulse
+            Welcome to Ojas
           </h1>
           <p className="text-lg text-muted-foreground">
             Let's set up your API security platform in 5 simple steps
@@ -201,7 +201,7 @@ export default function Onboarding() {
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
                   Start by uploading your first Postman or OpenAPI collection.
-                  This will allow DevPulse to analyze your API endpoints.
+                  This will allow Ojas to analyze your API endpoints.
                 </p>
                 <div className="bg-muted/50 p-4 rounded-lg space-y-3">
                   <div>

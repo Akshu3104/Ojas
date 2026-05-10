@@ -83,7 +83,7 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
               <Shield className="w-5 h-5 text-accent-foreground" />
             </div>
-            <span className="text-xl font-bold text-foreground">DevPulse</span>
+            <span className="text-xl font-bold text-foreground">Ojas</span>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -116,7 +116,7 @@ export default function Home() {
             AI Runtime Governance, in one platform
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Secure, monitor and kill-switch your AI agents. DevPulse unifies
+            Secure, monitor and kill-switch your AI agents. Ojas unifies
             API security, cost intelligence and compliance for production LLM
             workloads.
           </p>
@@ -199,7 +199,7 @@ export default function Home() {
             </h2>
             <p className="text-lg text-muted-foreground">
               From the prompts you send to the APIs your agents reach,
-              DevPulse keeps every layer secure, observable and accountable.
+              Ojas keeps every layer secure, observable and accountable.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
@@ -268,7 +268,7 @@ export default function Home() {
             Powered by MiniMax M2.7
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            DevPulse uses MiniMax M2.7 — a cutting-edge reasoning model — as its
+            Ojas uses MiniMax M2.7 — a cutting-edge reasoning model — as its
             core intelligence engine. Every scan analysis, compliance mapping,
             and threat explanation is generated with deep reasoning and
             automatically tracked in your token analytics dashboard.
@@ -314,7 +314,7 @@ export default function Home() {
       <footer className="border-t border-border/50 bg-card/50 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-muted-foreground text-sm">
           <p>
-            © 2026 DevPulse. All rights reserved. · Powered by MiniMax M2.7
+            © 2026 Ojas. All rights reserved. · Powered by MiniMax M2.7
           </p>
         </div>
       </footer>

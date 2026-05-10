@@ -192,7 +192,7 @@ function DashboardLayoutContent({
                 <div className="flex items-center gap-2 min-w-0">
                   <Shield className="h-4 w-4 text-primary shrink-0" />
                   <span className="font-semibold tracking-tight truncate text-primary">
-                    DevPulse
+                    Ojas
                   </span>
                 </div>
               ) : null}

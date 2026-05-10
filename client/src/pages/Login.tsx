@@ -63,13 +63,13 @@ export default function Login() {
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
             <Shield className="w-5 h-5 text-accent-foreground" />
           </div>
-          <span className="text-2xl font-bold">DevPulse</span>
+          <span className="text-2xl font-bold">Ojas</span>
         </Link>
 
         <div className="rounded-xl border border-border bg-card p-8 space-y-6 shadow-sm">
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-semibold text-foreground">
-              Sign in to DevPulse
+              Sign in to Ojas
             </h1>
             <p className="text-sm text-muted-foreground">
               Welcome back. Sign in with your email and password.

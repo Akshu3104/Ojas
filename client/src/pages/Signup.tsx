@@ -54,13 +54,13 @@ export default function Signup() {
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
             <Shield className="w-5 h-5 text-accent-foreground" />
           </div>
-          <span className="text-2xl font-bold">DevPulse</span>
+          <span className="text-2xl font-bold">Ojas</span>
         </Link>
 
         <div className="rounded-xl border border-border bg-card p-8 space-y-6 shadow-sm">
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-semibold text-foreground">
-              Create your DevPulse account
+              Create your Ojas account
             </h1>
             <p className="text-sm text-muted-foreground">
               Start with the free plan — no credit card required.
