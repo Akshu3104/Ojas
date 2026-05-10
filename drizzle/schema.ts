@@ -1072,3 +1072,28 @@ export const copilotMessages = mysqlTable(
 );
 export type CopilotMessageRow = typeof copilotMessages.$inferSelect;
 export type InsertCopilotMessageRow = typeof copilotMessages.$inferInsert;
+
+/**
+ * YAML policy documents authored by a tenant. The compiled JSON is cached
+ * alongside the source so the gateway can apply policies without re-parsing.
+ */
+export const tenantPolicies = mysqlTable(
+  "tenant_policies",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 192 }).notNull(),
+    yaml: text("yaml").notNull(),
+    compiled: json("compiled").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    appliesTo: varchar("appliesTo", { length: 256 }).notNull().default("all"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    appliesToIdx: index("appliesTo_idx").on(table.appliesTo),
+  })
+);
+export type TenantPolicyRow = typeof tenantPolicies.$inferSelect;
+export type InsertTenantPolicyRow = typeof tenantPolicies.$inferInsert;

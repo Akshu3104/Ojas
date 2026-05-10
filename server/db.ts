@@ -34,6 +34,9 @@ import {
   autofixSuggestions,
   copilotConversations,
   copilotMessages,
+  tenantPolicies,
+  type TenantPolicyRow,
+  type InsertTenantPolicyRow,
   type WebhookEndpoint,
   type InsertWebhookEndpoint,
   type InsertWebhookDelivery,
@@ -2854,4 +2857,65 @@ export async function listCopilotMessages(
     .from(copilotMessages)
     .where(eq(copilotMessages.conversationId, conversationId))
     .orderBy(copilotMessages.createdAt);
+}
+
+// ── Tenant policies (YAML DSL) ───────────────────────────────────────────────
+
+export async function createTenantPolicy(
+  row: InsertTenantPolicyRow
+): Promise<number> {
+  const db = await getDb();
+  assertDb(db);
+  const result = await db.insert(tenantPolicies).values(row);
+  return Number((result as unknown as { insertId?: number }).insertId ?? 0);
+}
+
+export async function listTenantPolicies(
+  userId: number
+): Promise<TenantPolicyRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(tenantPolicies)
+    .where(eq(tenantPolicies.userId, userId))
+    .orderBy(desc(tenantPolicies.updatedAt));
+}
+
+export async function getTenantPolicy(
+  userId: number,
+  id: number
+): Promise<TenantPolicyRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(tenantPolicies)
+    .where(and(eq(tenantPolicies.userId, userId), eq(tenantPolicies.id, id)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateTenantPolicy(
+  userId: number,
+  id: number,
+  patch: Partial<TenantPolicyRow>
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .update(tenantPolicies)
+    .set(patch)
+    .where(and(eq(tenantPolicies.userId, userId), eq(tenantPolicies.id, id)));
+}
+
+export async function deleteTenantPolicy(
+  userId: number,
+  id: number
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .delete(tenantPolicies)
+    .where(and(eq(tenantPolicies.userId, userId), eq(tenantPolicies.id, id)));
 }

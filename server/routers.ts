@@ -32,6 +32,7 @@ import { mcpGovernanceRouter } from "./api/mcpGovernance";
 import { runtimeGovernanceRouter } from "./api/runtimeGovernance";
 import { riskScoreRouter } from "./api/riskScore";
 import { socTwoRouter } from "./api/socTwo";
+import { policiesRouter } from "./api/policies";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -327,6 +328,7 @@ export const appRouter = router({
   mcpGovernance: mcpGovernanceRouter,
   runtimeGovernance: runtimeGovernanceRouter,
   socTwo: socTwoRouter,
+  policies: policiesRouter,
 });
 
 export type AppRouter = typeof appRouter;

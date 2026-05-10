@@ -269,7 +269,7 @@ importers:
         specifier: ^3.3.5
         version: 3.7.1(patch_hash=4utoqymkqegp7ldbtu4ndzqvum)(react@19.2.1)
       yaml:
-        specifier: ^2.7.0
+        specifier: ^2.8.3
         version: 2.8.3
       zod:
         specifier: ^4.1.12
