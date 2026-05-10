@@ -22,6 +22,7 @@ import Pricing from "./pages/Pricing";
 import CollectionDetail from "./pages/CollectionDetail";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import RedTeam from "./pages/RedTeam";
 
 function Router() {
   return (
@@ -118,6 +119,16 @@ function Router() {
           <DashboardLayout>
             <PageErrorBoundary pageName="Team Management">
               <Team />
+            </PageErrorBoundary>
+          </DashboardLayout>
+        )}
+      </Route>
+
+      <Route path={"/redteam"}>
+        {() => (
+          <DashboardLayout>
+            <PageErrorBoundary pageName="Red Team">
+              <RedTeam />
             </PageErrorBoundary>
           </DashboardLayout>
         )}

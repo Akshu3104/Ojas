@@ -33,6 +33,7 @@ import {
   Zap,
   FileText,
   CreditCard,
+  Swords,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -46,6 +47,7 @@ const menuItems = [
   { icon: Eye, label: "Shadow APIs", path: "/shadow-apis" },
   { icon: BarChart3, label: "Token Analytics", path: "/analytics" },
   { icon: Zap, label: "Kill Switch", path: "/kill-switch" },
+  { icon: Swords, label: "Red Team", path: "/redteam" },
   { icon: FileText, label: "Compliance", path: "/compliance" },
   { icon: Users, label: "Team", path: "/team" },
   { icon: CreditCard, label: "Pricing", path: "/pricing" },

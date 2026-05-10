@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ComplianceSkeleton } from "@/components/PageSkeletons";
 
 type ReportType = "pci_dss" | "owasp";
 
@@ -69,7 +70,8 @@ export default function Compliance() {
     useState<ReportType>("pci_dss");
   const [collectionId, setCollectionId] = useState("");
 
-  const { data: collections } = trpc.collections.list.useQuery();
+  const { data: collections, isLoading: collectionsLoading } =
+    trpc.collections.list.useQuery();
   const { data: reports, refetch: refetchReports } =
     trpc.compliance.listReports.useQuery(
       { collectionId },
@@ -81,6 +83,13 @@ export default function Compliance() {
   );
 
   const generateMutation = trpc.compliance.generateReport.useMutation();
+
+  // First-paint skeleton while the collections list (the only mount-time
+  // query) is loading. After collectionId is chosen, the per-collection
+  // queries are gated by `enabled` so we don't re-skeleton the whole page.
+  if (collectionsLoading && !collections) {
+    return <ComplianceSkeleton />;
+  }
 
   const handleGenerate = async () => {
     if (!collectionId) {

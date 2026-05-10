@@ -19,6 +19,7 @@ import {
 import { Download, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { TokenAnalyticsSkeleton } from "@/components/PageSkeletons";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -66,11 +67,7 @@ export default function TokenAnalytics() {
   };
 
   if (isLoading) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        Loading analytics...
-      </div>
-    );
+    return <TokenAnalyticsSkeleton />;
   }
 
   return (

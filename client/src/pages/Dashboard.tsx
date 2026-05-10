@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { AlertCircle, TrendingUp, Shield, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DashboardSkeleton } from "@/components/PageSkeletons";
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
@@ -10,6 +11,12 @@ export default function Dashboard() {
     trpc.dashboard.getMetrics.useQuery();
   const { data: recentScans, isLoading: scansLoading } =
     trpc.dashboard.getRecentScans.useQuery();
+
+  // First-paint skeleton: render shape-matching placeholders while both
+  // queries are pending so the user sees structure immediately.
+  if (metricsLoading && scansLoading && !metrics && !recentScans) {
+    return <DashboardSkeleton />;
+  }
 
   const riskLevelColor = (level: string) => {
     switch (level) {
