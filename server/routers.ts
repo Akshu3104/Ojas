@@ -31,6 +31,7 @@ import { vscodeExtensionRouter } from "./api/vscodeExtension";
 import { mcpGovernanceRouter } from "./api/mcpGovernance";
 import { runtimeGovernanceRouter } from "./api/runtimeGovernance";
 import { riskScoreRouter } from "./api/riskScore";
+import { socTwoRouter } from "./api/socTwo";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -325,6 +326,7 @@ export const appRouter = router({
   webhooks: webhooksRouter,
   mcpGovernance: mcpGovernanceRouter,
   runtimeGovernance: runtimeGovernanceRouter,
+  socTwo: socTwoRouter,
 });
 
 export type AppRouter = typeof appRouter;
