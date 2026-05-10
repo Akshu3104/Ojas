@@ -35,6 +35,7 @@ import { socTwoRouter } from "./api/socTwo";
 import { policiesRouter } from "./api/policies";
 import { alertsRouter } from "./api/alerts";
 import { dataExportRouter } from "./api/dataExport";
+import { apiDocsRouter, setAppRouterForDocs } from "./api/apiDocs";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -333,6 +334,13 @@ export const appRouter = router({
   policies: policiesRouter,
   alerts: alertsRouter,
   dataExport: dataExportRouter,
+  apiDocs: apiDocsRouter,
 });
+
+// Register the appRouter with the apiDocs introspector so its `spec`
+// procedure can walk the live router. We do this here instead of via
+// dynamic import inside apiDocs.ts to avoid a tRPC type cycle that
+// breaks react-query inference on the client.
+setAppRouterForDocs(appRouter);
 
 export type AppRouter = typeof appRouter;

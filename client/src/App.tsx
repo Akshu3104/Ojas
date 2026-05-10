@@ -23,6 +23,7 @@ import CollectionDetail from "./pages/CollectionDetail";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import RedTeam from "./pages/RedTeam";
+import ApiDocs from "./pages/ApiDocs";
 
 function Router() {
   return (
@@ -139,6 +140,16 @@ function Router() {
           <DashboardLayout>
             <PageErrorBoundary pageName="Pricing">
               <Pricing />
+            </PageErrorBoundary>
+          </DashboardLayout>
+        )}
+      </Route>
+
+      <Route path={"/api-docs"}>
+        {() => (
+          <DashboardLayout>
+            <PageErrorBoundary pageName="API Docs">
+              <ApiDocs />
             </PageErrorBoundary>
           </DashboardLayout>
         )}
