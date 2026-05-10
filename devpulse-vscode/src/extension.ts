@@ -20,6 +20,7 @@ import { DevPulseStatusBar } from "./statusBar";
 import { HeartbeatService } from "./heartbeat";
 import { SecurityWebviewPanel } from "./securityWebviewPanel";
 import { registerGatewayCommand } from "./gatewayTester";
+import { registerShadowApiCommand } from "./shadowApi";
 
 const SECRET_API_KEY = "devpulse.apiKey";
 
@@ -265,6 +266,7 @@ export async function activate(
   );
 
   await registerGatewayCommand(context, readApiKey);
+  registerShadowApiCommand(context);
 
   heartbeat.start();
 }

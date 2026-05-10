@@ -86,6 +86,10 @@
       {
         "command": "devpulse.testPromptThroughGateway",
         "title": "DevPulse: Test prompt through gateway"
+      },
+      {
+        "command": "devpulse.scanShadowApis",
+        "title": "DevPulse: Scan workspace for shadow APIs"
       }
     ],
     "viewsContainers": {
