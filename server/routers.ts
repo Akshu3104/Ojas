@@ -30,6 +30,7 @@ import { webhooksRouter } from "./api/webhooks";
 import { vscodeExtensionRouter } from "./api/vscodeExtension";
 import { mcpGovernanceRouter } from "./api/mcpGovernance";
 import { runtimeGovernanceRouter } from "./api/runtimeGovernance";
+import { riskScoreRouter } from "./api/riskScore";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -317,6 +318,7 @@ export const appRouter = router({
   team: teamRouter,
   onboarding: onboardingRouter,
   dashboard: dashboardRouter,
+  riskScore: riskScoreRouter,
   vscodeExtension: vscodeExtensionRouter,
   admin: adminRouter,
   payment: paymentsRouter,
