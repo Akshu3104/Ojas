@@ -38,6 +38,15 @@ interface OpenAIChatResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    /**
+     * Present on o1/o3/o4 reasoning-model responses. Wall-clock invisible
+     * tokens charged at the completion rate.
+     */
+    completion_tokens_details?: {
+      reasoning_tokens?: number;
+      accepted_prediction_tokens?: number;
+      rejected_prediction_tokens?: number;
+    };
   };
 }
 
@@ -97,6 +106,13 @@ export function createOpenAIProvider(cfg: OpenAIProviderConfig): Provider {
                   prompt_tokens: json.usage.prompt_tokens ?? 0,
                   completion_tokens: json.usage.completion_tokens ?? 0,
                   total_tokens: json.usage.total_tokens ?? 0,
+                  ...(json.usage.completion_tokens_details?.reasoning_tokens !==
+                  undefined
+                    ? {
+                        reasoning_tokens:
+                          json.usage.completion_tokens_details.reasoning_tokens,
+                      }
+                    : {}),
                 },
               }
             : {}),

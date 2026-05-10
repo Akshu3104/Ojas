@@ -194,6 +194,16 @@ export function createAnthropicProvider(
           .filter(b => b.type === "text" && typeof b.text === "string")
           .map(b => b.text!)
           .join("");
+        // Extended-thinking responses ship `thinking` content blocks. Anthropic
+        // does not currently report a separate `thinking_tokens` field in
+        // usage; we estimate by character length (~4 chars/token) so cost
+        // attribution can isolate hidden reasoning spend per call.
+        const thinkingChars = (json.content ?? [])
+          .filter(b => b.type === "thinking" && typeof b.text === "string")
+          .map(b => (b.text ?? "").length)
+          .reduce((a, n) => a + n, 0);
+        const reasoningTokens =
+          thinkingChars > 0 ? Math.round(thinkingChars / 4) : 0;
         return {
           id: json.id,
           model: json.model,
@@ -212,6 +222,21 @@ export function createAnthropicProvider(
                     (json.usage.cache_creation_input_tokens ?? 0) +
                     (json.usage.cache_read_input_tokens ?? 0) +
                     (json.usage.output_tokens ?? 0),
+                  ...(reasoningTokens > 0
+                    ? { reasoning_tokens: reasoningTokens }
+                    : {}),
+                  ...(json.usage.cache_creation_input_tokens !== undefined
+                    ? {
+                        cache_creation_input_tokens:
+                          json.usage.cache_creation_input_tokens,
+                      }
+                    : {}),
+                  ...(json.usage.cache_read_input_tokens !== undefined
+                    ? {
+                        cache_read_input_tokens:
+                          json.usage.cache_read_input_tokens,
+                      }
+                    : {}),
                 },
               }
             : {}),

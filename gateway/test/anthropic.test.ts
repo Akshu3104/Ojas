@@ -119,6 +119,39 @@ describe("Anthropic provider", () => {
     expect(sysBlocks[0]?.cache_control).toEqual({ type: "ephemeral" });
     expect(resp.usage?.prompt_tokens).toBe(154);
     expect(resp.usage?.total_tokens).toBe(156);
+    expect(resp.usage?.cache_creation_input_tokens).toBe(100);
+    expect(resp.usage?.cache_read_input_tokens).toBe(50);
+  });
+
+  it("estimates reasoning_tokens from extended-thinking content blocks", async () => {
+    // Anthropic does not currently report a discrete thinking_tokens field;
+    // we estimate from the byte length of `thinking` blocks (~4 chars/token).
+    const thinkingText = "x".repeat(1024); // ~256 tokens
+    const fake = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          id: "msg_thinking",
+          model: "claude-3-7-sonnet-20250219",
+          content: [
+            { type: "thinking", text: thinkingText },
+            { type: "text", text: "Final answer." },
+          ],
+          usage: { input_tokens: 10, output_tokens: 6 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    const provider = createAnthropicProvider({
+      apiKey: "sk-ant-fake",
+      baseUrl: "http://upstream.invalid",
+      fetchImpl: fake as unknown as typeof fetch,
+    });
+    const resp = await provider.invoke({
+      model: "claude-3-7-sonnet-20250219",
+      messages: [{ role: "user", content: "Solve 2+2 step by step." }],
+    });
+    expect(resp.outputText).toBe("Final answer.");
+    expect(resp.usage?.reasoning_tokens).toBe(256);
   });
 
   it("does not send caching beta header when not enabled", async () => {

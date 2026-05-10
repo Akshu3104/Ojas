@@ -32,6 +32,17 @@ export interface LlmTokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /**
+   * Reasoning / thinking tokens consumed by the model (OpenAI o1/o3/o4 series
+   * and Anthropic extended-thinking blocks). Surfaced separately so cost
+   * attribution can isolate hidden reasoning spend per call. Patent surface
+   * NHCE/DEV/2026/002 (Thinking Token Cost Attribution).
+   */
+  reasoning_tokens?: number;
+  /** Anthropic prompt-cache creation tokens (charged at write rate). */
+  cache_creation_input_tokens?: number;
+  /** Anthropic prompt-cache read tokens (charged at 10% rate). */
+  cache_read_input_tokens?: number;
 }
 
 export interface LlmResponse {
