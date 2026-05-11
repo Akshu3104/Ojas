@@ -1163,3 +1163,76 @@ export const alertEvents = mysqlTable(
 );
 export type AlertEventRow = typeof alertEvents.$inferSelect;
 export type InsertAlertEventRow = typeof alertEvents.$inferInsert;
+
+/* ─── SSO providers (Sprint 6 / Domain 5) ──────────────────────────────── */
+
+/**
+ * Single sign-on provider configuration. One row per IdP per workspace
+ * (workspace scoping is added in Sprint 6 / Domain 6 — for now `userId`
+ * pins the provider to the admin who configured it).
+ *
+ * Stored config per kind:
+ *  - kind="oidc":  { issuer, clientId, clientSecret (encrypted), scopes }
+ *  - kind="saml":  { entryPoint, issuer, certificate (PEM), audience,
+ *                    nameIdFormat, signRequests }
+ *
+ * The "enabled" flag is what gates whether /auth/sso/{id}/login redirects
+ * are accepted — a half-finished provider can sit in the table without
+ * unlocking real login.
+ */
+export const ssoProviders = mysqlTable(
+  "sso_providers",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    name: varchar("name", { length: 192 }).notNull(),
+    kind: mysqlEnum("kind", ["oidc", "saml"]).notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    /** JSON-encoded provider-kind-specific config (see comment above). */
+    config: json("config").notNull(),
+    /**
+     * Optional regex/email-domain match used to auto-route users to this
+     * provider on the login page. e.g. "@acme\\.com$".
+     */
+    emailDomain: varchar("emailDomain", { length: 256 }),
+    /** Default role for JIT-provisioned users from this IdP. */
+    defaultRole: mysqlEnum("defaultRole", ["admin", "editor", "viewer"])
+      .notNull()
+      .default("viewer"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    userIdIdx: index("userId_idx").on(table.userId),
+    kindIdx: index("kind_idx").on(table.kind),
+    enabledIdx: index("enabled_idx").on(table.enabled),
+  })
+);
+export type SsoProviderRow = typeof ssoProviders.$inferSelect;
+export type InsertSsoProviderRow = typeof ssoProviders.$inferInsert;
+
+/**
+ * Pending login attempt — needed for OIDC PKCE state and SAML RelayState
+ * round-trips. Rows are short-lived (5 min TTL) and consumed exactly once
+ * by the callback endpoint.
+ */
+export const ssoLoginRequests = mysqlTable(
+  "sso_login_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    state: varchar("state", { length: 128 }).notNull().unique(),
+    providerId: int("providerId").notNull(),
+    /** OIDC: PKCE code_verifier; SAML: the AuthnRequest ID we issued. */
+    codeVerifier: varchar("codeVerifier", { length: 256 }),
+    nonce: varchar("nonce", { length: 128 }),
+    redirectTo: varchar("redirectTo", { length: 512 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  table => ({
+    stateIdx: index("state_idx").on(table.state),
+    expiresAtIdx: index("expiresAt_idx").on(table.expiresAt),
+  })
+);
+export type SsoLoginRequestRow = typeof ssoLoginRequests.$inferSelect;
+export type InsertSsoLoginRequestRow = typeof ssoLoginRequests.$inferInsert;

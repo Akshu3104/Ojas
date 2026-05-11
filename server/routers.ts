@@ -36,6 +36,7 @@ import { policiesRouter } from "./api/policies";
 import { alertsRouter } from "./api/alerts";
 import { dataExportRouter } from "./api/dataExport";
 import { apiDocsRouter, setAppRouterForDocs } from "./api/apiDocs";
+import { ssoRouter } from "./api/sso";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -335,6 +336,7 @@ export const appRouter = router({
   alerts: alertsRouter,
   dataExport: dataExportRouter,
   apiDocs: apiDocsRouter,
+  sso: ssoRouter,
 });
 
 // Register the appRouter with the apiDocs introspector so its `spec`

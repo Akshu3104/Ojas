@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -37,12 +37,18 @@ import {
   tenantPolicies,
   alertRules,
   alertEvents,
+  ssoProviders,
+  ssoLoginRequests,
   type TenantPolicyRow,
   type InsertTenantPolicyRow,
   type AlertRuleRow,
   type InsertAlertRuleRow,
   type AlertEventRow,
   type InsertAlertEventRow,
+  type SsoProviderRow,
+  type InsertSsoProviderRow,
+  type SsoLoginRequestRow,
+  type InsertSsoLoginRequestRow,
   type WebhookEndpoint,
   type InsertWebhookEndpoint,
   type InsertWebhookDelivery,
@@ -3018,4 +3024,121 @@ export async function listAlertEvents(
     .where(eq(alertEvents.userId, userId))
     .orderBy(desc(alertEvents.firedAt))
     .limit(Math.min(limit, 500));
+}
+
+// ── SSO providers + pending logins (Sprint 6 / Domain 5) ─────────────────────
+
+export async function createSsoProvider(
+  row: InsertSsoProviderRow
+): Promise<number> {
+  const db = await getDb();
+  assertDb(db);
+  const result = await db.insert(ssoProviders).values(row);
+  return Number((result as unknown as { insertId?: number }).insertId ?? 0);
+}
+
+export async function listSsoProviders(
+  userId: number
+): Promise<SsoProviderRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(ssoProviders)
+    .where(eq(ssoProviders.userId, userId))
+    .orderBy(desc(ssoProviders.updatedAt));
+}
+
+export async function getSsoProvider(
+  id: number
+): Promise<SsoProviderRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(ssoProviders)
+    .where(eq(ssoProviders.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getSsoProviderForUser(
+  userId: number,
+  id: number
+): Promise<SsoProviderRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(ssoProviders)
+    .where(and(eq(ssoProviders.userId, userId), eq(ssoProviders.id, id)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateSsoProvider(
+  userId: number,
+  id: number,
+  patch: Partial<SsoProviderRow>
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .update(ssoProviders)
+    .set(patch)
+    .where(and(eq(ssoProviders.userId, userId), eq(ssoProviders.id, id)));
+}
+
+export async function deleteSsoProvider(
+  userId: number,
+  id: number
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .delete(ssoProviders)
+    .where(and(eq(ssoProviders.userId, userId), eq(ssoProviders.id, id)));
+}
+
+export async function createSsoLoginRequest(
+  row: InsertSsoLoginRequestRow
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db.insert(ssoLoginRequests).values(row);
+}
+
+/**
+ * Look up a pending SSO login request by state and atomically delete it
+ * so it can be consumed exactly once. Returns null if not found or expired.
+ */
+export async function consumeSsoLoginRequest(
+  state: string
+): Promise<SsoLoginRequestRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(ssoLoginRequests)
+    .where(eq(ssoLoginRequests.state, state))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  await db
+    .delete(ssoLoginRequests)
+    .where(eq(ssoLoginRequests.state, state));
+  if (row.expiresAt.getTime() < Date.now()) {
+    return null;
+  }
+  return row;
+}
+
+/** Background sweeper for expired pending login rows. */
+export async function reapExpiredSsoLoginRequests(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .delete(ssoLoginRequests)
+    .where(lt(ssoLoginRequests.expiresAt, new Date()));
+  return Number((result as unknown as { affectedRows?: number }).affectedRows ?? 0);
 }
