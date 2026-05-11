@@ -1236,3 +1236,102 @@ export const ssoLoginRequests = mysqlTable(
 );
 export type SsoLoginRequestRow = typeof ssoLoginRequests.$inferSelect;
 export type InsertSsoLoginRequestRow = typeof ssoLoginRequests.$inferInsert;
+
+/* ─── Workspaces + RBAC (Sprint 6 / Domain 6) ──────────────────────────── */
+
+/**
+ * A workspace is the unit of multi-tenant isolation. Every user has a
+ * personal default workspace created at signup (so existing single-user
+ * setups continue to work unmodified). Paid customers can create
+ * additional workspaces and invite teammates with role-scoped access.
+ *
+ * The "slug" is human-readable and globally unique; we URL-route to it
+ * (/w/<slug>/dashboard) so multi-workspace users can bookmark per-org
+ * views.
+ */
+export const workspaces = mysqlTable(
+  "workspaces",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** URL slug, e.g. "acme-prod". 3-64 chars, [a-z0-9-]. */
+    slug: varchar("slug", { length: 64 }).notNull().unique(),
+    name: varchar("name", { length: 192 }).notNull(),
+    /** User who created the workspace. Auto-granted "owner" membership. */
+    ownerUserId: int("ownerUserId").notNull(),
+    /** True for the auto-created per-user workspace; cannot be deleted. */
+    isPersonal: boolean("isPersonal").notNull().default(false),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    ownerIdx: index("ownerUserId_idx").on(table.ownerUserId),
+    slugIdx: index("slug_idx").on(table.slug),
+  })
+);
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type InsertWorkspaceRow = typeof workspaces.$inferInsert;
+
+/**
+ * Membership join — one row per (workspace, user) pair. Roles use a
+ * strict 4-level hierarchy:
+ *
+ *   owner   — everything; cannot be removed; transferable
+ *   admin   — manage members, billing, settings; everything else
+ *   editor  — create/update/delete tenant data; cannot invite
+ *   viewer  — read-only
+ *
+ * The "active" flag lets us soft-suspend a member without losing their
+ * audit history; "invitedBy" is who sent the invite (or NULL for the
+ * auto-membership on workspace creation).
+ */
+export const workspaceMembers = mysqlTable(
+  "workspace_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    workspaceId: int("workspaceId").notNull(),
+    userId: int("userId").notNull(),
+    role: mysqlEnum("role", ["owner", "admin", "editor", "viewer"])
+      .notNull()
+      .default("viewer"),
+    active: boolean("active").notNull().default(true),
+    invitedBy: int("invitedBy"),
+    invitedAt: timestamp("invitedAt"),
+    joinedAt: timestamp("joinedAt").defaultNow().notNull(),
+  },
+  table => ({
+    workspaceUserUniq: index("workspaceId_userId_idx").on(
+      table.workspaceId,
+      table.userId
+    ),
+    userIdIdx: index("userId_idx").on(table.userId),
+  })
+);
+export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
+export type InsertWorkspaceMemberRow = typeof workspaceMembers.$inferInsert;
+
+/**
+ * Pending workspace invitations. Sent by email; consumed by an
+ * accept-token URL. Rows are deleted on accept/decline/expire.
+ */
+export const workspaceInvitations = mysqlTable(
+  "workspace_invitations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    workspaceId: int("workspaceId").notNull(),
+    email: varchar("email", { length: 320 }).notNull(),
+    role: mysqlEnum("role", ["admin", "editor", "viewer"])
+      .notNull()
+      .default("viewer"),
+    token: varchar("token", { length: 128 }).notNull().unique(),
+    invitedBy: int("invitedBy").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  table => ({
+    workspaceIdIdx: index("workspaceId_idx").on(table.workspaceId),
+    emailIdx: index("email_idx").on(table.email),
+    tokenIdx: index("token_idx").on(table.token),
+  })
+);
+export type WorkspaceInvitationRow = typeof workspaceInvitations.$inferSelect;
+export type InsertWorkspaceInvitationRow = typeof workspaceInvitations.$inferInsert;

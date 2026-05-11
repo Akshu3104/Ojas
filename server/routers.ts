@@ -37,6 +37,8 @@ import { alertsRouter } from "./api/alerts";
 import { dataExportRouter } from "./api/dataExport";
 import { apiDocsRouter, setAppRouterForDocs } from "./api/apiDocs";
 import { ssoRouter } from "./api/sso";
+import { workspacesRouter } from "./api/workspaces";
+import { ensurePersonalWorkspace } from "./services/workspaceContext";
 import { logger } from "./_core/logger";
 
 // ============================================================================
@@ -156,6 +158,17 @@ export const appRouter = router({
           }
         } catch (err) {
           logger.warn({ err: err }, "[signup] first-user promotion skipped");
+        }
+
+        // Auto-create the user's personal workspace + owner membership.
+        // Idempotent — never fails signup if it can't be created.
+        try {
+          await ensurePersonalWorkspace(created.id, input.name.trim());
+        } catch (err) {
+          logger.warn(
+            { err: err, userId: created.id },
+            "[signup] personal workspace creation skipped"
+          );
         }
 
         const sessionToken = await sdk.createSessionToken(created.openId, {
@@ -337,6 +350,7 @@ export const appRouter = router({
   dataExport: dataExportRouter,
   apiDocs: apiDocsRouter,
   sso: ssoRouter,
+  workspaces: workspacesRouter,
 });
 
 // Register the appRouter with the apiDocs introspector so its `spec`

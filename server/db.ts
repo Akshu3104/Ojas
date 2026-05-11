@@ -39,6 +39,9 @@ import {
   alertEvents,
   ssoProviders,
   ssoLoginRequests,
+  workspaces,
+  workspaceMembers,
+  workspaceInvitations,
   type TenantPolicyRow,
   type InsertTenantPolicyRow,
   type AlertRuleRow,
@@ -49,6 +52,12 @@ import {
   type InsertSsoProviderRow,
   type SsoLoginRequestRow,
   type InsertSsoLoginRequestRow,
+  type WorkspaceRow,
+  type InsertWorkspaceRow,
+  type WorkspaceMemberRow,
+  type InsertWorkspaceMemberRow,
+  type WorkspaceInvitationRow,
+  type InsertWorkspaceInvitationRow,
   type WebhookEndpoint,
   type InsertWebhookEndpoint,
   type InsertWebhookDelivery,
@@ -3141,4 +3150,227 @@ export async function reapExpiredSsoLoginRequests(): Promise<number> {
     .delete(ssoLoginRequests)
     .where(lt(ssoLoginRequests.expiresAt, new Date()));
   return Number((result as unknown as { affectedRows?: number }).affectedRows ?? 0);
+}
+
+// ── Workspaces + RBAC (Sprint 6 / Domain 6) ──────────────────────────────────
+
+export async function createWorkspace(
+  row: InsertWorkspaceRow
+): Promise<number> {
+  const db = await getDb();
+  assertDb(db);
+  const result = await db.insert(workspaces).values(row);
+  return Number((result as unknown as { insertId?: number }).insertId ?? 0);
+}
+
+export async function getWorkspaceById(
+  id: number
+): Promise<WorkspaceRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getWorkspaceBySlug(
+  slug: string
+): Promise<WorkspaceRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.slug, slug))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getPersonalWorkspaceForUser(
+  userId: number
+): Promise<WorkspaceRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(workspaces)
+    .where(
+      and(eq(workspaces.ownerUserId, userId), eq(workspaces.isPersonal, true))
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listWorkspacesForUser(
+  userId: number
+): Promise<Array<WorkspaceRow & { role: WorkspaceMemberRow["role"] }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: workspaces.id,
+      slug: workspaces.slug,
+      name: workspaces.name,
+      ownerUserId: workspaces.ownerUserId,
+      isPersonal: workspaces.isPersonal,
+      createdAt: workspaces.createdAt,
+      updatedAt: workspaces.updatedAt,
+      role: workspaceMembers.role,
+    })
+    .from(workspaceMembers)
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+    .where(
+      and(
+        eq(workspaceMembers.userId, userId),
+        eq(workspaceMembers.active, true)
+      )
+    )
+    .orderBy(desc(workspaces.createdAt));
+  return rows;
+}
+
+export async function updateWorkspace(
+  id: number,
+  patch: Partial<WorkspaceRow>
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db.update(workspaces).set(patch).where(eq(workspaces.id, id));
+}
+
+export async function deleteWorkspace(id: number): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db.delete(workspaces).where(eq(workspaces.id, id));
+}
+
+export async function addWorkspaceMember(
+  row: InsertWorkspaceMemberRow
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db.insert(workspaceMembers).values(row);
+}
+
+export async function getWorkspaceMembership(
+  workspaceId: number,
+  userId: number
+): Promise<WorkspaceMemberRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(workspaceMembers)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listWorkspaceMembers(
+  workspaceId: number
+): Promise<WorkspaceMemberRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(workspaceMembers)
+    .where(eq(workspaceMembers.workspaceId, workspaceId))
+    .orderBy(desc(workspaceMembers.joinedAt));
+}
+
+export async function updateWorkspaceMember(
+  workspaceId: number,
+  userId: number,
+  patch: Partial<WorkspaceMemberRow>
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .update(workspaceMembers)
+    .set(patch)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    );
+}
+
+export async function removeWorkspaceMember(
+  workspaceId: number,
+  userId: number
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .delete(workspaceMembers)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    );
+}
+
+export async function createWorkspaceInvitation(
+  row: InsertWorkspaceInvitationRow
+): Promise<number> {
+  const db = await getDb();
+  assertDb(db);
+  const result = await db.insert(workspaceInvitations).values(row);
+  return Number((result as unknown as { insertId?: number }).insertId ?? 0);
+}
+
+export async function getWorkspaceInvitationByToken(
+  token: string
+): Promise<WorkspaceInvitationRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(workspaceInvitations)
+    .where(eq(workspaceInvitations.token, token))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listWorkspaceInvitations(
+  workspaceId: number
+): Promise<WorkspaceInvitationRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(workspaceInvitations)
+    .where(eq(workspaceInvitations.workspaceId, workspaceId))
+    .orderBy(desc(workspaceInvitations.createdAt));
+}
+
+export async function deleteWorkspaceInvitation(
+  id: number
+): Promise<void> {
+  const db = await getDb();
+  assertDb(db);
+  await db
+    .delete(workspaceInvitations)
+    .where(eq(workspaceInvitations.id, id));
+}
+
+export async function reapExpiredWorkspaceInvitations(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .delete(workspaceInvitations)
+    .where(lt(workspaceInvitations.expiresAt, new Date()));
+  return Number(
+    (result as unknown as { affectedRows?: number }).affectedRows ?? 0
+  );
 }
