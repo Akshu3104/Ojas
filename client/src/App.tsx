@@ -24,6 +24,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import RedTeam from "./pages/RedTeam";
 import ApiDocs from "./pages/ApiDocs";
+import Trust from "./pages/Trust";
 
 function Router() {
   return (
@@ -152,6 +153,14 @@ function Router() {
               <ApiDocs />
             </PageErrorBoundary>
           </DashboardLayout>
+        )}
+      </Route>
+
+      <Route path={"/trust"}>
+        {() => (
+          <PageErrorBoundary pageName="Trust">
+            <Trust />
+          </PageErrorBoundary>
         )}
       </Route>
 

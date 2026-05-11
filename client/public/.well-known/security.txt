@@ -1,0 +1,12 @@
+# Ojas security.txt — RFC 9116
+# Replace placeholders before publishing.
+
+Contact: mailto:security@ojas.ai
+Contact: https://ojas.ai/legal/VULNERABILITY_DISCLOSURE.md
+Expires: 2027-01-01T00:00:00.000Z
+Encryption: https://ojas.ai/.well-known/pgp-key.txt
+Acknowledgments: https://ojas.ai/security/acknowledgments
+Preferred-Languages: en
+Canonical: https://ojas.ai/.well-known/security.txt
+Policy: https://ojas.ai/legal/VULNERABILITY_DISCLOSURE.md
+Hiring: https://ojas.ai/careers

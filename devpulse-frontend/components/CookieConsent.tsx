@@ -2,13 +2,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const COOKIE_KEY = "devpulse.cookieConsent.v1";
+const COOKIE_KEY = "ojas.cookieConsent.v1";
 
 /**
- * Non-blocking cookie-consent banner. Because DevPulse only sets first-party
+ * Non-blocking cookie-consent banner. Because Ojas only sets first-party
  * strictly-necessary cookies (session + CSRF), this is an informational notice
  * rather than a consent gate, per ePrivacy art. 5(3) exemption. If you later
- * add analytics or marketing cookies, wire them behind this acceptance.
+ * add analytics or marketing cookies, wire them behind this acceptance and
+ * surface category choices in legal/COOKIE_POLICY.md.
  */
 export function CookieConsent() {
   const [visible, setVisible] = useState(false);
@@ -46,10 +47,17 @@ export function CookieConsent() {
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="leading-relaxed">
-          DevPulse uses strictly necessary first-party cookies for
+          Ojas uses strictly necessary first-party cookies for
           authentication and security. No tracking, no advertising. See our{" "}
           <Link
-            href="/privacy"
+            href="/legal/cookies"
+            className="text-blue-400 underline hover:text-blue-300"
+          >
+            Cookie Policy
+          </Link>{" "}
+          and{" "}
+          <Link
+            href="/legal/privacy"
             className="text-blue-400 underline hover:text-blue-300"
           >
             Privacy Policy
@@ -58,7 +66,7 @@ export function CookieConsent() {
         </p>
         <div className="flex shrink-0 gap-2">
           <Link
-            href="/privacy"
+            href="/legal/cookies"
             className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
           >
             Learn more

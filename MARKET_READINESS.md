@@ -1,8 +1,10 @@
 # Market Readiness — Honest Assessment
 
-> Last updated: 2026-05-08 (Sprint 6 — z.ai feature parity sprint).
+> Last updated: 2026-05-08 (Sprint 7 — Legal & paperwork drafts).
 > Branch: `devin/1778322844-sprint3-build-everything`
 > Test status: **478/478 server-side tests passing**, **68/68 gateway tests passing**, 9/9 Python SDK tests passing, 14/14 VS Code shadow-API scanner tests, `pnpm tsc --noEmit` ✓.
+>
+> **Sprint 7 added 14 first-draft legal & business documents** in `legal/` (+ `client/public/legal/` served as static assets + a `/trust` page + `client/public/.well-known/security.txt`). No new engineering tests; this sprint is **non-engineering** — first-draft templates that still require redlining by a qualified Indian SaaS lawyer + a placeholder-replacement pass before they can be published.
 >
 > **Sprint 6 added 154 more server tests + 13 gateway tests** across six new feature domains: YAML Policy DSL (16), Configurable Alert Rules + Discord/PagerDuty (47), Data Export multi-format (12), API Documentation Portal (15), SAML/OIDC SSO (39 incl. JIT-provisioning), RBAC + Workspaces (25). Gateway perf bench added (13 tests) with module-load lowercased needles + Aho-Corasick utility for future >500-pattern scaling.
 >
@@ -16,7 +18,21 @@ This document is the unvarnished, no-flattery answer to "is it built and market 
 
 ## TL;DR
 
-**Overall product market-readiness: ~92%** (was 85% post-Sprint-5, 78% post-Sprint-4, 62% pre-Sprint-4).
+**Overall product market-readiness: ~95%** (was 92% post-Sprint-6, 85% post-Sprint-5, 78% post-Sprint-4, 62% pre-Sprint-4).
+
+**Sprint 7 closed the legal/business-paperwork drafting work that was previously listed as "founder-only paperwork".** First-draft templates of every public-facing and contract-attachment legal document are now in the repo under `legal/`, with a Trust Centre page at `/trust` and a published `security.txt`. The remaining 5% to "100% market ready" is:
+- **Lawyer redline** of every document in `legal/` (~₹15–50k for an Indian SaaS lawyer).
+- **Founder-only setup** that no engineer can do: incorporating the company, GST/PAN/TAN, bank account, trademark filing, domain purchase, Stripe live keys, GitHub App registration, VS Code Marketplace publisher, PyPI account, Vanta/Drata choice, SOC 2 Type 1 audit (3–6 month calendar). The complete check-list is in [`legal/INCORPORATION_CHECKLIST.md`](./legal/INCORPORATION_CHECKLIST.md).
+
+**Sprint 7 deliverable summary (legal):**
+1. **Public-facing docs (7):** Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use Policy, SLA, Refund Policy, Vulnerability Disclosure Policy.
+2. **Enterprise / contract-attachment docs (4):** Data Processing Addendum (incl. SCCs + UK IDTA annexes), Sub-processor List, Security Statement, Mutual NDA template.
+3. **Product-specific (1):** VS Code Extension EULA — required by the VS Code Marketplace.
+4. **Internal references (2):** Data Retention Schedule, Records of Processing Activities (RoPA — Art. 30 GDPR / DPDPA-equivalent).
+5. **Founder setup checklists (2):** Incorporation & Pre-Launch Checklist, Replace-Before-Publishing Cheat Sheet (every `{{PLACEHOLDER}}` used across the docs).
+6. **Frontend Trust Centre (`/trust`):** lists every doc with audience tag + read / download links + clear "first-draft, lawyer review pending" amber banner.
+7. **`client/public/.well-known/security.txt`:** RFC 9116 security contact + disclosure-policy pointer.
+8. **`scripts/sync-legal-to-public.sh`:** idempotent script that copies `legal/*.md` into `client/public/legal/` for Vite static serving.
 
 **Sprint 6 closed the six engineering items z.ai had built into a parallel fork — recreated properly in our actual repo with real tests:**
 1. **YAML Policy DSL.** New `server/services/policyDsl.ts` (parser + validator + compiler) and `server/services/policyTemplates.ts` (5 production templates: Strict, Balanced, Permissive, India-PII, Demo). Per-tenant policies persisted in `tenant_policies` table; tRPC router exposes CRUD. 16 unit tests.
